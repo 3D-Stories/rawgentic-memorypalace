@@ -1,6 +1,8 @@
-"""Tests for the FastAPI memory server endpoints."""
+"""Tests for the FastAPI memory server endpoints and idle timeout."""
 
+import asyncio
 import time
+from unittest.mock import MagicMock
 
 
 class TestHealthz:
@@ -86,3 +88,84 @@ class TestStats:
         for backend in data["backends"].values():
             assert backend["doc_count"] == 0
             assert backend["available"] is False
+
+
+class TestIdleTimeout:
+    """Validate idle timeout shuts down the server after inactivity."""
+
+    def test_idle_watcher_sets_should_exit_after_timeout(self):
+        """Idle watcher should set server.should_exit when timeout expires."""
+        from rawgentic_memory.server import _idle_watcher, create_app
+
+        app = create_app(idle_timeout=1)
+        mock_server = MagicMock()
+        mock_server.should_exit = False
+        app.state.server = mock_server
+        # Push last_activity into the past so timeout is already expired
+        app.state.last_activity = time.monotonic() - 2
+
+        asyncio.run(_idle_watcher(app, check_interval=0.1))
+
+        assert mock_server.should_exit is True
+
+    def test_idle_watcher_does_not_exit_while_active(self):
+        """Idle watcher should NOT shut down if activity is recent."""
+        from rawgentic_memory.server import _idle_watcher, create_app
+
+        app = create_app(idle_timeout=10)
+        mock_server = MagicMock()
+        mock_server.should_exit = False
+        app.state.server = mock_server
+        # Activity is fresh — timeout should not trigger
+        app.state.last_activity = time.monotonic()
+
+        async def run_watcher_briefly():
+            task = asyncio.create_task(_idle_watcher(app, check_interval=0.1))
+            await asyncio.sleep(0.3)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        asyncio.run(run_watcher_briefly())
+
+        assert mock_server.should_exit is False
+
+    def test_idle_timeout_zero_disables_shutdown(self):
+        """Setting idle_timeout=0 should disable the auto-shutdown."""
+        from rawgentic_memory.server import _idle_watcher, create_app
+
+        app = create_app(idle_timeout=0)
+        mock_server = MagicMock()
+        mock_server.should_exit = False
+        app.state.server = mock_server
+        # Even with old activity, timeout=0 should never trigger
+        app.state.last_activity = time.monotonic() - 100000
+
+        async def run_watcher_briefly():
+            task = asyncio.create_task(_idle_watcher(app, check_interval=0.1))
+            await asyncio.sleep(0.3)
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        asyncio.run(run_watcher_briefly())
+
+        assert mock_server.should_exit is False
+
+    def test_healthz_does_not_reset_idle_timer(self, app, client):
+        """Monitoring endpoints must NOT prevent idle timeout."""
+        initial_activity = app.state.last_activity
+        time.sleep(0.05)
+        client.get("/healthz")
+        assert app.state.last_activity == initial_activity
+
+    def test_stats_does_not_reset_idle_timer(self, app, client):
+        """Monitoring endpoints must NOT prevent idle timeout."""
+        initial_activity = app.state.last_activity
+        time.sleep(0.05)
+        client.get("/stats")
+        assert app.state.last_activity == initial_activity
