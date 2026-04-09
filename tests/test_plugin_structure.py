@@ -102,3 +102,72 @@ class TestPyprojectDependencies:
         assert "<4.0" in mempalace_dep or "<4" in mempalace_dep, (
             "mempalace must have upper bound <4.0"
         )
+
+
+class TestMcpServerRegistration:
+    """Validate MCP server is registered in plugin.json."""
+
+    def _load_plugin(self):
+        path = PROJECT_ROOT / ".claude-plugin" / "plugin.json"
+        with open(path) as f:
+            return json.load(f)
+
+    def test_mcp_servers_key_exists(self):
+        data = self._load_plugin()
+        assert "mcpServers" in data, "plugin.json must have mcpServers key"
+
+    def test_mempalace_mcp_server_registered(self):
+        data = self._load_plugin()
+        assert "mempalace" in data["mcpServers"], (
+            "mempalace MCP server must be registered"
+        )
+
+    def test_mcp_server_has_command(self):
+        server = self._load_plugin()["mcpServers"]["mempalace"]
+        assert "command" in server
+        assert "args" in server
+
+    def test_mcp_server_uses_mempalace_module(self):
+        server = self._load_plugin()["mcpServers"]["mempalace"]
+        assert "mempalace.mcp_server" in " ".join(server.get("args", []))
+
+    def test_description_no_dual_backends(self):
+        data = self._load_plugin()
+        assert "dual" not in data["description"].lower(), (
+            "Description must not reference dual backends (AC9)"
+        )
+
+
+class TestUpgradeSkillStructure:
+    """Validate skills/upgrade/SKILL.md exists and has correct structure."""
+
+    SKILL_DIR = PROJECT_ROOT / "skills" / "upgrade"
+    SKILL_FILE = SKILL_DIR / "SKILL.md"
+
+    def test_skill_directory_exists(self):
+        assert self.SKILL_DIR.exists(), "Missing skills/upgrade/ directory"
+
+    def test_skill_file_exists(self):
+        assert self.SKILL_FILE.exists(), "Missing skills/upgrade/SKILL.md"
+
+    def test_skill_has_frontmatter(self):
+        content = self.SKILL_FILE.read_text()
+        assert content.startswith("---"), "SKILL.md must start with YAML frontmatter"
+        parts = content.split("---", 2)
+        assert len(parts) >= 3, "SKILL.md must have opening and closing --- delimiters"
+
+    def test_skill_frontmatter_has_name(self):
+        content = self.SKILL_FILE.read_text()
+        frontmatter = content.split("---", 2)[1]
+        assert "name:" in frontmatter
+        assert "upgrade" in frontmatter
+
+    def test_skill_references_pip_upgrade(self):
+        content = self.SKILL_FILE.read_text()
+        body = content.split("---", 2)[2]
+        assert "pip install --upgrade mempalace" in body
+
+    def test_skill_warns_on_major_version(self):
+        content = self.SKILL_FILE.read_text()
+        body = content.split("---", 2)[2]
+        assert "major" in body.lower(), "Skill must warn about major version changes"

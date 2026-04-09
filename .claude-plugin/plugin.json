@@ -1,7 +1,7 @@
 {
   "name": "rawgentic-memorypalace",
   "version": "0.1.0",
-  "description": "Long-term memory plugin for Claude Code — dual backends (native ChromaDB + MemPalace) with A/B comparison framework and semantic search.",
+  "description": "Long-term memory plugin for Claude Code — MemPalace-powered storage with intelligent ingestion triggers, semantic search, and wake-up context.",
   "author": {
     "name": "3D-Stories",
     "url": "https://github.com/3D-Stories"
@@ -12,8 +12,16 @@
   "keywords": [
     "memory",
     "long-term-memory",
+    "mempalace",
     "chromadb",
     "semantic-search",
     "session-context"
-  ]
+  ],
+  "mcpServers": {
+    "mempalace": {
+      "command": "python",
+      "args": ["-m", "mempalace.mcp_server"],
+      "description": "MemPalace MCP server — direct access to palace search, wake-up, diary, and KG tools"
+    }
+  }
 }
