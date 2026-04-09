@@ -41,6 +41,7 @@ if [[ "$ELAPSED" -ge "$INGEST_INTERVAL_SECONDS" ]]; then
     if [[ -n "$NOTES" ]]; then
         PAYLOAD=$(build_ingest_payload "$PROJECT" "$SESSION_ID" "$NOTES" "timer" "")
         call_memory_server "/ingest" "POST" "$PAYLOAD" >/dev/null 2>&1 &
+        disown 2>/dev/null || true
     else
         _debug "No session notes found — skipping ingest"
     fi

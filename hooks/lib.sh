@@ -177,9 +177,11 @@ gather_session_notes() {
         return 0
     fi
 
-    # Path containment: must be under $HOME
-    if [[ "$notes_path" != "$HOME"/* ]]; then
-        _debug "Session notes path $notes_path is not under HOME ($HOME) — rejected"
+    # Path containment: must be under $HOME (resolve symlinks on both sides)
+    local safe_home
+    safe_home="$(realpath "$HOME" 2>/dev/null || echo "$HOME")"
+    if [[ "$notes_path" != "$safe_home"/* ]]; then
+        _debug "Session notes path $notes_path is not under HOME ($safe_home) — rejected"
         return 0
     fi
 

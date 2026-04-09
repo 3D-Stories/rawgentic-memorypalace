@@ -128,11 +128,11 @@ def create_app(
         # Offset-based incremental processing
         offset_key = f"{req.project}:{req.session_id}"
 
-        # Per-key lock to prevent TOCTOU races under concurrent triggers
-        if offset_key not in app.state.ingest_locks:
-            app.state.ingest_locks[offset_key] = asyncio.Lock()
+        # Per-key lock to prevent TOCTOU races under concurrent triggers.
+        # setdefault is atomic under CPython's GIL, avoiding a check-then-create race.
+        lock = app.state.ingest_locks.setdefault(offset_key, asyncio.Lock())
 
-        async with app.state.ingest_locks[offset_key]:
+        async with lock:
             last_offset = app.state.ingest_offsets.get(offset_key, 0)
             content_len = len(req.notes)
 
@@ -153,11 +153,14 @@ def create_app(
             )
             result = app.state.backend.ingest(data)
 
-            # Update offset and enforce LRU cap
+            # Update offset and enforce LRU cap.
+            # Eviction causes full re-ingest on next call for that key,
+            # which is safe because ChromaDB upsert deduplicates by doc ID.
             app.state.ingest_offsets[offset_key] = content_len
             app.state.ingest_offsets.move_to_end(offset_key)
             while len(app.state.ingest_offsets) > _INGEST_OFFSET_MAX_ENTRIES:
-                app.state.ingest_offsets.popitem(last=False)
+                evicted_key, _ = app.state.ingest_offsets.popitem(last=False)
+                app.state.ingest_locks.pop(evicted_key, None)
 
         return JSONResponse(asdict(result))
 

@@ -24,8 +24,11 @@ _debug "Stop event — gathering session notes for synchronous flush"
 NOTES=$(gather_session_notes "$CWD")
 if [[ -n "$NOTES" ]]; then
     PAYLOAD=$(build_ingest_payload "$PROJECT" "$SESSION_ID" "$NOTES" "stop" "")
-    # Synchronous call — but skip lazy-start (no point starting server at shutdown)
-    MEMORY_NO_AUTOSTART=1 call_memory_server "/ingest" "POST" "$PAYLOAD" >/dev/null 2>&1 || true
+    # Synchronous call — skip lazy-start (no point starting server at shutdown).
+    # Must set the variable explicitly; prefix assignment on a bash function
+    # does not update the shell variable the function reads.
+    MEMORY_NO_AUTOSTART=1
+    call_memory_server "/ingest" "POST" "$PAYLOAD" >/dev/null 2>&1 || true
 else
     _debug "No session notes found — skipping final flush"
 fi
