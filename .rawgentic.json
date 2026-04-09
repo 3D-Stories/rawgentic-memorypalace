@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "project": {
+    "name": "rawgentic-memorypalace",
+    "type": "library",
+    "description": "Claude Code plugin providing long-term memory via dual backends (native ChromaDB + MemPalace) with A/B comparison framework and semantic search"
+  },
+  "repo": {
+    "provider": "github",
+    "fullName": "3D-Stories/rawgentic-memorypalace",
+    "defaultBranch": "main"
+  },
+  "techStack": ["python", "fastapi", "uvicorn", "chromadb", "bash", "docker"],
+  "testing": {
+    "frameworks": [
+      {
+        "name": "pytest",
+        "type": "unit",
+        "command": "python -m pytest",
+        "configFile": "pyproject.toml",
+        "testDir": "tests"
+      }
+    ]
+  },
+  "services": [
+    {
+      "name": "memory-server",
+      "type": "backend",
+      "framework": "fastapi",
+      "entryPoint": "rawgentic_memory/server.py",
+      "healthCheck": "/healthz"
+    }
+  ],
+  "documentation": {
+    "primaryFiles": ["README.md", "docs/"],
+    "format": "markdown"
+  },
+  "protectionLevel": "sandbox",
+  "custom": {}
+}
