@@ -64,6 +64,8 @@ class TestHookScripts:
         env = os.environ.copy()
         # Point to a port that definitely has no server
         env["MEMORY_SERVER_URL"] = "http://127.0.0.1:19999"
+        # Disable lazy-start to avoid 10s polling delay per hook
+        env["MEMORY_NO_AUTOSTART"] = "1"
         # Provide minimal JSON stdin that hooks expect
         stdin_data = json.dumps({
             "cwd": str(PROJECT_ROOT),
