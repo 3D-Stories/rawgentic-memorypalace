@@ -1,0 +1,33 @@
+#!/bin/bash
+# Hook: UserPromptSubmit
+# Checks if 2h has elapsed since last ingest, triggers background ingest if so.
+# Graceful degradation: exits 0 if memory server is unreachable.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
+
+read_hook_input
+
+PROJECT=$(get_field "cwd" | xargs basename 2>/dev/null || echo "unknown")
+LAST_INGEST_FILE="${MEMORY_STATE_DIR}/memorypalace-last-ingest-${PROJECT}"
+INGEST_INTERVAL_SECONDS=7200  # 2 hours
+
+# Check timer state
+NOW=$(date +%s)
+LAST_INGEST=0
+if [[ -f "$LAST_INGEST_FILE" ]]; then
+    LAST_INGEST=$(cat "$LAST_INGEST_FILE" 2>/dev/null || echo "0")
+fi
+
+ELAPSED=$((NOW - LAST_INGEST))
+
+if [[ "$ELAPSED" -ge "$INGEST_INTERVAL_SECONDS" ]]; then
+    _debug "2h elapsed since last ingest ($ELAPSED seconds) — triggering background ingest"
+    if call_memory_server "/ingest?project=${PROJECT}" "POST" >/dev/null 2>&1 & then
+        echo "$NOW" > "$LAST_INGEST_FILE"
+    fi
+fi
+
+exit 0

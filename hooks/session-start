@@ -1,0 +1,35 @@
+#!/bin/bash
+# Hook: SessionStart (matcher: startup|resume|compact)
+# - On startup/resume: calls /wakeup for context injection
+# - On compact: calls /ingest async (PreCompact trigger)
+# Graceful degradation: exits 0 if memory server is unreachable.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
+
+read_hook_input
+
+# Determine event type from matcher
+EVENT_TYPE=$(get_field "event" 2>/dev/null || echo "startup")
+
+case "$EVENT_TYPE" in
+    compact)
+        # PreCompact: trigger ingest asynchronously
+        _debug "PreCompact event — triggering async ingest"
+        PROJECT=$(get_field "cwd" | xargs basename 2>/dev/null || echo "unknown")
+        call_memory_server "/ingest?project=${PROJECT}" "POST" &
+        ;;
+    startup|resume|*)
+        # Wake-up: fetch context for session injection
+        _debug "SessionStart event — fetching wake-up context"
+        PROJECT=$(get_field "cwd" | xargs basename 2>/dev/null || echo "unknown")
+        CONTEXT=$(call_memory_server "/wakeup?project=${PROJECT}" 2>/dev/null || echo "")
+        if [[ -n "$CONTEXT" ]]; then
+            echo "{\"additionalContext\": $CONTEXT}"
+        fi
+        ;;
+esac
+
+exit 0
