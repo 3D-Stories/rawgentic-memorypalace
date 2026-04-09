@@ -57,7 +57,7 @@ ensure_server_running() {
 
     # Extract port from MEMORY_SERVER_URL
     local port
-    port=$(echo "$MEMORY_SERVER_URL" | grep -oP ':\K[0-9]+$' || echo "8420")
+    port=$(echo "$MEMORY_SERVER_URL" | grep -oP '://[^/]+:\K[0-9]+' || echo "8420")
 
     local lockfile="${MEMORY_STATE_DIR}/memorypalace-start.lock"
     local logfile="${MEMORY_STATE_DIR}/memorypalace-server.log"
