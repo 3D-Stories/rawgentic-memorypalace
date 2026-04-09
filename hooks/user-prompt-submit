@@ -1,6 +1,7 @@
 #!/bin/bash
 # Hook: UserPromptSubmit
-# Checks if 2h has elapsed since last ingest, triggers background ingest if so.
+# Checks if 2h has elapsed since last ingest, triggers background ingest if so (AC2).
+# Timer updates unconditionally — server-side offset handles deduplication.
 # Graceful degradation: exits 0 if memory server is unreachable.
 
 set -euo pipefail
@@ -10,10 +11,13 @@ source "$SCRIPT_DIR/lib.sh"
 
 read_hook_input
 
-PROJECT=$(get_field "cwd" | xargs basename 2>/dev/null || echo "unknown")
+CWD=$(get_field "cwd" 2>/dev/null || echo "")
+PROJECT=$(echo "$CWD" | xargs basename 2>/dev/null || echo "unknown")
 # Sanitize project name to safe URL chars
 PROJECT=$(echo "$PROJECT" | tr -cd 'a-zA-Z0-9_-')
 PROJECT="${PROJECT:-unknown}"
+
+SESSION_ID=$(get_field "session_id" 2>/dev/null || echo "hook-$(date +%s)")
 LAST_INGEST_FILE="${MEMORY_STATE_DIR}/memorypalace-last-ingest-${PROJECT}"
 INGEST_INTERVAL_SECONDS=7200  # 2 hours
 
@@ -32,9 +36,16 @@ fi
 ELAPSED=$((NOW - LAST_INGEST))
 
 if [[ "$ELAPSED" -ge "$INGEST_INTERVAL_SECONDS" ]]; then
-    _debug "2h elapsed since last ingest ($ELAPSED seconds) — triggering background ingest"
-    # Fire-and-forget: update timer unconditionally, server handles deduplication
-    call_memory_server "/ingest?project=${PROJECT}" "POST" >/dev/null 2>&1 &
+    _debug "2h elapsed since last ingest ($ELAPSED seconds) — gathering session notes"
+    NOTES=$(gather_session_notes "$CWD")
+    if [[ -n "$NOTES" ]]; then
+        PAYLOAD=$(build_ingest_payload "$PROJECT" "$SESSION_ID" "$NOTES" "timer" "")
+        call_memory_server "/ingest" "POST" "$PAYLOAD" >/dev/null 2>&1 &
+        disown 2>/dev/null || true
+    else
+        _debug "No session notes found — skipping ingest"
+    fi
+    # Update timer unconditionally — server offset handles dedup on restart
     echo "$NOW" > "$LAST_INGEST_FILE"
 fi
 

@@ -95,3 +95,91 @@ class TestUserPromptSubmitTimer:
         assert "last-ingest" in content or "LAST_INGEST" in content, (
             "user-prompt-submit must manage timer state for 2h ingest trigger"
         )
+
+
+class TestGatherSessionNotes:
+    """Validate gather_session_notes() content gathering."""
+
+    def _run_gather(self, cwd, home=None):
+        env = os.environ.copy()
+        env["MEMORY_SERVER_URL"] = "http://127.0.0.1:19999"
+        env["MEMORY_NO_AUTOSTART"] = "1"
+        if home:
+            env["HOME"] = home
+        script = f"""
+source "{HOOKS_DIR}/lib.sh"
+gather_session_notes "{cwd}"
+"""
+        result = subprocess.run(
+            ["bash", "-c", script],
+            capture_output=True, text=True, env=env, timeout=5,
+        )
+        return result
+
+    def test_reads_session_notes_file(self, tmp_path):
+        notes_dir = tmp_path / "claude_docs"
+        notes_dir.mkdir()
+        (notes_dir / "session_notes.md").write_text("We decided to use PostgreSQL.")
+        result = self._run_gather(str(tmp_path), home=str(tmp_path))
+        assert result.returncode == 0
+        assert "PostgreSQL" in result.stdout
+
+    def test_returns_empty_when_file_missing(self, tmp_path):
+        result = self._run_gather(str(tmp_path), home=str(tmp_path))
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_rejects_path_outside_home(self, tmp_path):
+        notes_dir = tmp_path / "claude_docs"
+        notes_dir.mkdir()
+        (notes_dir / "session_notes.md").write_text("secret data")
+        # HOME is set to a completely different path — cwd is NOT under HOME
+        result = self._run_gather(str(tmp_path), home="/nonexistent/safe/home")
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+
+class TestBuildIngestPayload:
+    """Validate build_ingest_payload() JSON construction."""
+
+    def _run_build(self, project="testproj", session_id="s1",
+                   notes="test content", source="manual"):
+        env = os.environ.copy()
+        env["MEMORY_SERVER_URL"] = "http://127.0.0.1:19999"
+        env["MEMORY_NO_AUTOSTART"] = "1"
+        env["TEST_NOTES"] = notes
+        script = f"""
+source "{HOOKS_DIR}/lib.sh"
+build_ingest_payload "{project}" "{session_id}" "$TEST_NOTES" "{source}" ""
+"""
+        result = subprocess.run(
+            ["bash", "-c", script],
+            capture_output=True, text=True, env=env, timeout=5,
+        )
+        return result
+
+    def test_produces_valid_json(self):
+        result = self._run_build()
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert isinstance(data, dict)
+
+    def test_includes_required_fields(self):
+        result = self._run_build(
+            project="myproj", session_id="sess-1",
+            notes="We decided to use FastAPI.", source="precompact",
+        )
+        data = json.loads(result.stdout)
+        assert data["project"] == "myproj"
+        assert data["session_id"] == "sess-1"
+        assert "FastAPI" in data["notes"]
+        assert data["source"] == "precompact"
+        assert "timestamp" in data
+
+    def test_escapes_special_characters(self):
+        notes = 'He said "hello" and used a \\ backslash'
+        result = self._run_build(notes=notes)
+        assert result.returncode == 0
+        data = json.loads(result.stdout)
+        assert '"hello"' in data["notes"]
+        assert "\\" in data["notes"]

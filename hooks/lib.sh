@@ -158,3 +158,66 @@ get_field() {
     local field="$1"
     echo "$HOOK_INPUT" | jq -r ".$field // empty" 2>/dev/null
 }
+
+# Read session notes from a project directory.
+# Validates that the resolved path is under $HOME to prevent path traversal.
+# Usage: gather_session_notes <cwd>
+# Output: file content on stdout (empty if file missing or path invalid)
+gather_session_notes() {
+    local cwd="$1"
+    if [[ -z "$cwd" ]]; then
+        return 0
+    fi
+
+    local notes_path
+    notes_path="$(realpath "${cwd}/claude_docs/session_notes.md" 2>/dev/null)" || true
+
+    if [[ -z "$notes_path" ]]; then
+        _debug "Could not resolve session notes path"
+        return 0
+    fi
+
+    # Path containment: must be under $HOME (resolve symlinks on both sides)
+    local safe_home
+    safe_home="$(realpath "$HOME" 2>/dev/null || echo "$HOME")"
+    if [[ "$notes_path" != "$safe_home"/* ]]; then
+        _debug "Session notes path $notes_path is not under HOME ($safe_home) — rejected"
+        return 0
+    fi
+
+    if [[ ! -f "$notes_path" ]]; then
+        _debug "Session notes file not found: $notes_path"
+        return 0
+    fi
+
+    cat "$notes_path"
+}
+
+# Build a JSON payload for the /ingest endpoint.
+# Uses jq --arg for safe escaping (no shell interpolation of content).
+# Usage: build_ingest_payload <project> <session_id> <notes> <source> <source_file>
+# Output: JSON string on stdout
+build_ingest_payload() {
+    local project="$1"
+    local session_id="$2"
+    local notes="$3"
+    local source="$4"
+    local source_file="${5:-}"
+    local timestamp
+    timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Default session_id if empty
+    if [[ -z "$session_id" ]]; then
+        session_id="hook-$(date +%s)"
+    fi
+
+    jq -n \
+        --arg session_id "$session_id" \
+        --arg project "$project" \
+        --arg notes "$notes" \
+        --arg source "$source" \
+        --arg timestamp "$timestamp" \
+        --arg source_file "$source_file" \
+        '{session_id: $session_id, project: $project, notes: $notes,
+          source: $source, timestamp: $timestamp, source_file: $source_file}'
+}
