@@ -1,6 +1,5 @@
 """Tests for /ingest, /search, and /reindex server endpoints."""
 
-import json
 import time
 
 import chromadb

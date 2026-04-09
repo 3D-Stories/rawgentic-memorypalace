@@ -34,13 +34,19 @@ _COLLECTION_PREFIX = "memories_"
 
 
 def _collection_name(project: str) -> str:
-    """Derive a ChromaDB collection name from a project slug."""
-    # ChromaDB collection names: 3-63 chars, alphanumeric + underscores/hyphens
-    slug = project.replace("/", "_").replace(" ", "_").lower()
+    """Derive a ChromaDB collection name from a project slug.
+
+    ChromaDB names: 3-63 chars, alphanumeric/underscores/hyphens,
+    must start and end with alphanumeric.
+    """
+    import re as _re
+    # Strip non-alphanumeric (except hyphens/underscores), lowercase
+    slug = _re.sub(r"[^a-zA-Z0-9_-]", "_", project).lower()
+    slug = slug.strip("_-") or "default"
     name = f"{_COLLECTION_PREFIX}{slug}"
     # Clamp to ChromaDB's 63-char limit
     if len(name) > 63:
-        name = name[:55] + "_" + hashlib.md5(name.encode()).hexdigest()[:7]
+        name = name[:55] + "_" + hashlib.sha256(name.encode()).hexdigest()[:7]
     # Ensure minimum 3 chars
     if len(name) < 3:
         name = name + "__"
@@ -238,8 +244,14 @@ class NativeBackend(MemoryBackend):
                     total_errors += 1
                     continue
 
-                # Derive project from directory structure or filename
-                project = fpath.stem
+                # Derive project from parent directory name (not filename).
+                # e.g., /session_notes/grocusave/session_01.md → "grocusave"
+                # For files directly in the source dir, fall back to filename stem.
+                relative = fpath.relative_to(p)
+                if len(relative.parts) > 1:
+                    project = relative.parts[0]
+                else:
+                    project = fpath.stem
 
                 data = SessionData(
                     session_id="reindex",

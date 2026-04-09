@@ -59,6 +59,16 @@ class TestReindex:
         result = backend.reindex([str(tmp_path)])
         assert result.indexed >= 1
 
+    def test_reindex_derives_project_from_parent_dir(self, backend, tmp_path):
+        """Files in subdirs get project from the subdir name, not filename."""
+        proj_dir = tmp_path / "grocusave"
+        proj_dir.mkdir()
+        (proj_dir / "session_01.md").write_text("We decided to use Algolia.")
+        backend.reindex([str(tmp_path)])
+        results = backend.search("Algolia", project="grocusave")
+        assert len(results) >= 1
+        assert results[0].project == "grocusave"
+
     def test_reindex_populates_search(self, backend, tmp_path):
         (tmp_path / "proj.md").write_text(
             "We decided to use PostgreSQL for the database."
