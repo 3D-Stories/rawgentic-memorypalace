@@ -14,19 +14,24 @@ read_hook_input
 # Determine event type from matcher
 EVENT_TYPE=$(get_field "event" 2>/dev/null || echo "startup")
 
+PROJECT=$(get_field "cwd" | xargs basename 2>/dev/null || echo "unknown")
+# Sanitize project name to safe URL chars
+PROJECT=$(echo "$PROJECT" | tr -cd 'a-zA-Z0-9_-')
+PROJECT="${PROJECT:-unknown}"
+
 case "$EVENT_TYPE" in
     compact)
-        # PreCompact: trigger ingest asynchronously
+        # PreCompact: fire-and-forget async ingest (disown to avoid zombie)
         _debug "PreCompact event — triggering async ingest"
-        PROJECT=$(get_field "cwd" | xargs basename 2>/dev/null || echo "unknown")
-        call_memory_server "/ingest?project=${PROJECT}" "POST" &
+        call_memory_server "/ingest?project=${PROJECT}" "POST" >/dev/null 2>&1 &
+        disown 2>/dev/null || true
         ;;
     startup|resume|*)
         # Wake-up: fetch context for session injection
         _debug "SessionStart event — fetching wake-up context"
-        PROJECT=$(get_field "cwd" | xargs basename 2>/dev/null || echo "unknown")
         CONTEXT=$(call_memory_server "/wakeup?project=${PROJECT}" 2>/dev/null || echo "")
-        if [[ -n "$CONTEXT" ]]; then
+        # Validate JSON before injecting into hook output
+        if [[ -n "$CONTEXT" ]] && echo "$CONTEXT" | jq empty 2>/dev/null; then
             echo "{\"additionalContext\": $CONTEXT}"
         fi
         ;;
