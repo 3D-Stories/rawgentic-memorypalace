@@ -25,18 +25,15 @@ class TestHealthz:
     def test_healthz_has_backends_field(self, client):
         data = client.get("/healthz").json()
         assert "backends" in data
-        assert "native" in data["backends"]
         assert "mempalace" in data["backends"]
 
-    def test_healthz_backends_are_booleans(self, client):
+    def test_healthz_mempalace_is_boolean(self, client):
         backends = client.get("/healthz").json()["backends"]
-        assert isinstance(backends["native"], bool)
         assert isinstance(backends["mempalace"], bool)
 
-    def test_healthz_backends_initially_false(self, client):
-        """Backends are not implemented yet — both should report unavailable."""
+    def test_healthz_no_backend_reports_false(self, client):
+        """No backend connected — mempalace should report unavailable."""
         backends = client.get("/healthz").json()["backends"]
-        assert backends["native"] is False
         assert backends["mempalace"] is False
 
     def test_healthz_responds_within_1_second(self, client):
@@ -64,12 +61,11 @@ class TestStats:
         data = client.get("/stats").json()
         assert "backends" in data
 
-    def test_stats_backends_have_required_fields(self, client):
+    def test_stats_mempalace_has_required_fields(self, client):
         backends = client.get("/stats").json()["backends"]
-        for name in ("native", "mempalace"):
-            assert name in backends, f"Missing backend: {name}"
-            assert "doc_count" in backends[name]
-            assert "available" in backends[name]
+        assert "mempalace" in backends
+        assert "doc_count" in backends["mempalace"]
+        assert "available" in backends["mempalace"]
 
     def test_stats_has_last_ingest_field(self, client):
         data = client.get("/stats").json()
@@ -85,9 +81,9 @@ class TestStats:
         data = client.get("/stats").json()
         assert data["last_ingest"] is None
         assert data["index_size_bytes"] == 0
-        for backend in data["backends"].values():
-            assert backend["doc_count"] == 0
-            assert backend["available"] is False
+        mp = data["backends"]["mempalace"]
+        assert mp["doc_count"] == 0
+        assert mp["available"] is False
 
 
 class TestIdleTimeout:
