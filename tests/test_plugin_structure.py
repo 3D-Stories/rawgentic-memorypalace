@@ -3,6 +3,11 @@
 import json
 from pathlib import Path
 
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib  # Python <3.11 fallback
+
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
@@ -72,4 +77,28 @@ class TestHooksJson:
         )
         assert "compact" in matchers, (
             "SessionStart must have a matcher that includes 'compact' for PreCompact"
+        )
+
+
+class TestPyprojectDependencies:
+    """Validate pyproject.toml declares mempalace dependency."""
+
+    def _load_pyproject(self):
+        path = PROJECT_ROOT / "pyproject.toml"
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+
+    def test_mempalace_in_dependencies(self):
+        data = self._load_pyproject()
+        deps = data["project"]["dependencies"]
+        mempalace_deps = [d for d in deps if d.startswith("mempalace")]
+        assert len(mempalace_deps) == 1, "pyproject.toml must declare mempalace dependency"
+
+    def test_mempalace_version_pinned(self):
+        data = self._load_pyproject()
+        deps = data["project"]["dependencies"]
+        mempalace_dep = [d for d in deps if d.startswith("mempalace")][0]
+        assert ">=3.0.0" in mempalace_dep, "mempalace must be pinned to >=3.0.0"
+        assert "<4.0" in mempalace_dep or "<4" in mempalace_dep, (
+            "mempalace must have upper bound <4.0"
         )
