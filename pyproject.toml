@@ -16,5 +16,8 @@ dev = [
     "httpx>=0.24.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["rawgentic_memory*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

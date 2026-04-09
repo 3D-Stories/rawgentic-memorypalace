@@ -1,7 +1,7 @@
 """Shared fixtures for rawgentic-memorypalace tests."""
 
-import httpx
 import pytest
+from starlette.testclient import TestClient
 
 
 @pytest.fixture
@@ -14,7 +14,6 @@ def app():
 
 @pytest.fixture
 def client(app):
-    """Synchronous httpx client wired to the FastAPI app via ASGITransport."""
-    transport = httpx.ASGITransport(app=app)
-    with httpx.Client(transport=transport, base_url="http://testserver") as c:
+    """Synchronous test client for the FastAPI app."""
+    with TestClient(app) as c:
         yield c
