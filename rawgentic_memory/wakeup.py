@@ -15,6 +15,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from rawgentic_memory.backend import MemoryBackend
 from rawgentic_memory.models import WakeupContext
 
 logger = logging.getLogger(__name__)
@@ -102,8 +103,10 @@ def generate_l1(
         recency_weight = 1.0 / (1.0 + days_old / 30.0)
         score = frequency * recency_weight
 
-        # Pick the most recent document as representative
-        best_doc = max(group, key=lambda d: d.get("metadata", {}).get("timestamp", ""))
+        # Pick the most recent document as representative (use parsed datetimes,
+        # not lexicographic string comparison, to handle mixed TZ formats).
+        best_idx = timestamps.index(most_recent)
+        best_doc = group[best_idx]
         scored.append({
             "topic": topic,
             "content": best_doc["content"],
@@ -128,8 +131,8 @@ def generate_l1(
 
 
 def generate_wakeup(
-    backend,
-    project: str,
+    backend: MemoryBackend | None,
+    project: str | None,
     l0_path: Path | str | None = None,
 ) -> WakeupContext:
     """Generate combined L0 + L1 wake-up context.
@@ -154,9 +157,9 @@ def generate_wakeup(
         parts.append(l0_text)
         layers.append("L0")
 
-    # L1: critical facts from backend
+    # L1: critical facts from backend (requires a project name)
     l1_text = ""
-    if backend is not None and hasattr(backend, "get_project_documents"):
+    if backend is not None and project:
         try:
             docs = backend.get_project_documents(project)
             l1_text = generate_l1(docs)
