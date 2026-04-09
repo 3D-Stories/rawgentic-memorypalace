@@ -11,6 +11,11 @@ source "$SCRIPT_DIR/lib.sh"
 
 read_hook_input
 
+# Verify mempalace is importable (declared dependency — should be installed)
+if ! python3 -c "import mempalace" 2>/dev/null; then
+    _debug "WARNING: mempalace not importable — memory backend will be unavailable"
+fi
+
 # Determine event type from matcher
 EVENT_TYPE=$(get_field "event" 2>/dev/null || echo "startup")
 

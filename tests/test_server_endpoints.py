@@ -1,25 +1,16 @@
-"""Tests for /ingest, /search, and /reindex server endpoints."""
+"""Tests for /ingest, /search, /reindex, and /wakeup server endpoints."""
 
 import time
 
-import chromadb
 import pytest
 from starlette.testclient import TestClient
 
-from rawgentic_memory.native_backend import NativeBackend
+from rawgentic_memory.mempalace_backend import MemPalaceBackend
 
 
 @pytest.fixture
-def chroma_client():
-    settings = chromadb.Settings(allow_reset=True, anonymized_telemetry=False)
-    client = chromadb.EphemeralClient(settings=settings)
-    client.reset()
-    return client
-
-
-@pytest.fixture
-def backend(chroma_client):
-    return NativeBackend(client=chroma_client)
+def backend(tmp_path):
+    return MemPalaceBackend(palace_path=str(tmp_path / "palace"))
 
 
 @pytest.fixture
@@ -307,12 +298,11 @@ class TestIncrementalIngest:
         assert data["skipped"] >= 1
         assert data["indexed"] == 0
 
-    def test_lru_eviction_allows_reingest(self, backend):
+    def test_lru_eviction_allows_reingest(self, app_with_backend):
         """When LRU evicts an old offset, the next call for that key reprocesses."""
-        from rawgentic_memory.server import _INGEST_OFFSET_MAX_ENTRIES, create_app
+        from rawgentic_memory.server import _INGEST_OFFSET_MAX_ENTRIES
 
-        app = create_app(backend=backend)
-        with TestClient(app) as c:
+        with TestClient(app_with_backend) as c:
             # Ingest for the target project first
             notes = "We decided to use PostgreSQL."
             c.post("/ingest", json=self._make_payload(
@@ -393,10 +383,11 @@ class TestWakeupEndpoint:
         assert data["text"] == ""
         assert data["layers"] == []
 
-    def test_wakeup_with_l0_file(self, backend, tmp_path):
+    def test_wakeup_with_l0_file(self, tmp_path):
         from rawgentic_memory.server import create_app
         l0_file = tmp_path / "l0.md"
         l0_file.write_text("I am a developer working on testproj.")
+        backend = MemPalaceBackend(palace_path=str(tmp_path / "palace"))
         app = create_app(backend=backend, l0_path=str(l0_file))
         with TestClient(app) as c:
             resp = c.get("/wakeup?project=testproj")
@@ -404,9 +395,9 @@ class TestWakeupEndpoint:
             assert "L0" in data["layers"]
             assert "developer" in data["text"]
 
-    def test_wakeup_backend_native(self, client_with_backend):
+    def test_wakeup_backend_mempalace(self, client_with_backend):
         resp = client_with_backend.get("/wakeup?project=testproj")
-        assert resp.json()["backend"] == "native"
+        assert resp.json()["backend"] == "mempalace"
 
     def test_wakeup_resets_idle_timer(self, app_with_backend, client_with_backend):
         initial = app_with_backend.state.last_activity

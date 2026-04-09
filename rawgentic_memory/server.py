@@ -15,9 +15,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from rawgentic_memory.backend import MemoryBackend
-from rawgentic_memory.models import IngestResult, SessionData
-from rawgentic_memory.wakeup import generate_wakeup
+from rawgentic_memory.models import IngestResult, SessionData, WakeupContext
 
 _INGEST_OFFSET_MAX_ENTRIES = 512
 
@@ -50,7 +48,7 @@ class ReindexRequest(BaseModel):
 
 def create_app(
     idle_timeout: int = 14400,
-    backend: MemoryBackend | None = None,
+    backend=None,
     l0_path: str | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
@@ -82,32 +80,30 @@ def create_app(
     @app.get("/healthz")
     async def healthz():
         uptime = time.monotonic() - app.state.start_time
-        native_available = False
+        mp_available = False
         if app.state.backend is not None:
-            native_available = app.state.backend.stats().available
+            mp_available = app.state.backend.stats().available
         return JSONResponse({
             "status": "ok",
             "uptime": round(uptime, 2),
             "backends": {
-                "native": native_available,
-                "mempalace": False,
+                "mempalace": mp_available,
             },
         })
 
     @app.get("/stats")
     async def stats():
-        native_stats = {"doc_count": 0, "available": False}
+        mp_stats = {"doc_count": 0, "available": False}
         last_ingest = None
         index_size_bytes = 0
         if app.state.backend is not None:
             bs = app.state.backend.stats()
-            native_stats = {"doc_count": bs.doc_count, "available": bs.available}
+            mp_stats = {"doc_count": bs.doc_count, "available": bs.available}
             last_ingest = bs.last_ingest
             index_size_bytes = bs.index_size_bytes
         return JSONResponse({
             "backends": {
-                "native": native_stats,
-                "mempalace": {"doc_count": 0, "available": False},
+                "mempalace": mp_stats,
             },
             "last_ingest": last_ingest,
             "index_size_bytes": index_size_bytes,
@@ -191,11 +187,13 @@ def create_app(
 
     @app.get("/wakeup")
     async def wakeup(project: str = Query(default="", max_length=128)):
-        ctx = generate_wakeup(
-            backend=app.state.backend,
-            project=project or None,
-            l0_path=app.state.l0_path,
-        )
+        if app.state.backend is not None and hasattr(app.state.backend, "wakeup"):
+            ctx = app.state.backend.wakeup(
+                project=project or None,
+                l0_path=app.state.l0_path,
+            )
+        else:
+            ctx = WakeupContext(text="", tokens=0, layers=[], backend="mempalace")
         return JSONResponse(asdict(ctx))
 
     return app
@@ -240,7 +238,16 @@ def run_server(
     """Start the server with idle timeout watcher."""
     import uvicorn
 
-    app = create_app(idle_timeout=idle_timeout, l0_path=l0_path)
+    backend = None
+    try:
+        from rawgentic_memory.mempalace_backend import MemPalaceBackend, MEMPALACE_AVAILABLE
+
+        if MEMPALACE_AVAILABLE:
+            backend = MemPalaceBackend()
+    except Exception:
+        pass
+
+    app = create_app(idle_timeout=idle_timeout, backend=backend, l0_path=l0_path)
     config = uvicorn.Config(
         app,
         host="127.0.0.1",
