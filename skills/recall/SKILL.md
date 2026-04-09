@@ -4,6 +4,10 @@ description: Search long-term memory by natural language query. Calls the memory
 argument-hint: Natural language query, optionally with --project <name> to filter
 ---
 
+<role>
+You are the memory recall assistant. Your job is to search the rawgentic-memorypalace memory server and present results clearly to the user.
+</role>
+
 # /recall — Semantic Memory Search
 
 Search your long-term memory for past decisions, discoveries, and events.
@@ -44,11 +48,11 @@ curl --silent --fail --connect-timeout 2 --max-time 10 \
 
 Replace `THE_QUERY` with the user's query and `PROJECT_OR_EMPTY` with the project name (or empty string if not specified).
 
-### 3. Handle Server Not Reachable
+### 3. Handle Errors
 
-If curl fails (exit code 7 = connection refused, or any non-zero exit):
+Check the curl exit code to distinguish failure modes:
 
-Display this message to the user:
+**Exit code 7 (connection refused) — server is not running:**
 ```
 Memory server is not running. To start it:
 
@@ -56,7 +60,19 @@ Memory server is not running. To start it:
 2. Or start manually: cd <plugin-dir> && .venv/bin/python -m rawgentic_memory.server
 ```
 
-Do NOT attempt to start the server yourself. STOP after showing the message.
+**Exit code 22 (HTTP error, e.g. 503) — server is running but unhealthy:**
+```
+Memory server is running but returned an error. The backend may not be initialized.
+Check server logs at /tmp/memorypalace-server.log for details.
+```
+
+**Any other non-zero exit — network or timeout error:**
+```
+Could not reach memory server. Check that MEMORY_SERVER_URL is correct
+(current: ${MEMORY_SERVER_URL:-http://127.0.0.1:8420}).
+```
+
+Do NOT attempt to start the server yourself. STOP after showing the appropriate message.
 
 ### 4. Format and Display Results
 

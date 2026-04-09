@@ -94,3 +94,12 @@ class TestRecallSkillContent:
         assert "curl" in body, (
             "Skill must use curl for HTTP calls (consistent with hooks pattern)"
         )
+
+    def test_distinguishes_connection_refused_from_http_error(self):
+        body = self._read_body()
+        assert "exit code 7" in body.lower() or "connection refused" in body.lower(), (
+            "Skill must distinguish connection refused from HTTP errors"
+        )
+        assert "503" in body or "http error" in body.lower() or "unhealthy" in body.lower(), (
+            "Skill must handle HTTP error case (e.g. 503 backend unavailable)"
+        )
