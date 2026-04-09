@@ -62,3 +62,17 @@ class BackendStats:
     doc_count: int = 0
     last_ingest: str | None = None
     index_size_bytes: int = 0
+
+
+@dataclass
+class WakeupContext:
+    """Wake-up context returned by /wakeup endpoint.
+
+    Combines L0 (static identity) and L1 (critical facts) tiers.
+    The ``tokens`` field is an approximate word-count estimate.
+    """
+
+    text: str
+    tokens: int
+    layers: list[str] = field(default_factory=list)
+    backend: str = "native"

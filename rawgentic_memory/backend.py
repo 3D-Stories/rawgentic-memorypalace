@@ -36,3 +36,15 @@ class MemoryBackend(ABC):
     @abstractmethod
     def reindex(self, source_dirs: list[str]) -> IngestResult:
         """Rebuild the index from source files."""
+
+    @abstractmethod
+    def get_project_documents(
+        self, project: str, limit: int = 500,
+    ) -> list[dict]:
+        """Return all documents for a project as {content, metadata} dicts.
+
+        Used by wake-up context generation for frequency/recency ranking.
+        Each dict has keys ``"content"`` (str) and ``"metadata"`` (dict with
+        ``topic``, ``timestamp``, ``memory_type``, ``project``,
+        ``source_file``, ``session_id``).
+        """

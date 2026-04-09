@@ -204,6 +204,29 @@ class NativeBackend(MemoryBackend):
         all_results.sort(key=lambda r: r.similarity, reverse=True)
         return all_results[:limit]
 
+    def get_project_documents(
+        self, project: str, limit: int = 500,
+    ) -> list[dict]:
+        """Return all documents for a project as {content, metadata} dicts."""
+        collection = self._get_collection(project)
+        count = collection.count()
+        if count == 0:
+            return []
+
+        # ChromaDB get() returns all docs; cap at limit to prevent resource exhaustion.
+        result = collection.get(
+            include=["metadatas", "documents"],
+            limit=min(count, limit),
+        )
+
+        docs: list[dict] = []
+        for i, doc_id in enumerate(result["ids"]):
+            docs.append({
+                "content": result["documents"][i],
+                "metadata": result["metadatas"][i],
+            })
+        return docs
+
     def stats(self) -> BackendStats:
         """Return backend status and document counts."""
         total_docs = 0
