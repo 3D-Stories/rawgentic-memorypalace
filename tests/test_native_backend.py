@@ -219,6 +219,78 @@ class TestNativeBackendSearch:
         assert results == []
 
 
+class TestNativeBackendGetProjectDocuments:
+    """Validate bulk document retrieval for wakeup context."""
+
+    def _ingest_sample(self, backend):
+        backend.ingest(SessionData(
+            session_id="s1",
+            project="proj-a",
+            notes="We decided to use PostgreSQL. Found that ChromaDB is fast.",
+            source="manual",
+            timestamp="2026-04-09T12:00:00Z",
+            source_file="notes/proj-a/session.md",
+        ))
+
+    def test_returns_list_of_dicts(self, backend):
+        self._ingest_sample(backend)
+        docs = backend.get_project_documents("proj-a")
+        assert isinstance(docs, list)
+        assert all(isinstance(d, dict) for d in docs)
+
+    def test_returns_content_and_metadata(self, backend):
+        self._ingest_sample(backend)
+        docs = backend.get_project_documents("proj-a")
+        assert len(docs) >= 1
+        doc = docs[0]
+        assert "content" in doc
+        assert "metadata" in doc
+        assert isinstance(doc["content"], str)
+        assert isinstance(doc["metadata"], dict)
+
+    def test_metadata_has_required_fields(self, backend):
+        self._ingest_sample(backend)
+        docs = backend.get_project_documents("proj-a")
+        meta = docs[0]["metadata"]
+        for field in ("topic", "timestamp", "memory_type", "project",
+                       "source_file", "session_id"):
+            assert field in meta, f"Missing metadata field: {field}"
+
+    def test_empty_project_returns_empty_list(self, backend):
+        docs = backend.get_project_documents("nonexistent")
+        assert docs == []
+
+    def test_respects_limit(self, backend):
+        # Ingest enough to have multiple docs
+        for i in range(5):
+            backend.ingest(SessionData(
+                session_id=f"s{i}",
+                project="bulk",
+                notes=f"We decided to use approach {i}. Found that method {i} works.",
+                source="manual",
+                timestamp=f"2026-04-0{i+1}T12:00:00Z",
+            ))
+        all_docs = backend.get_project_documents("bulk")
+        limited = backend.get_project_documents("bulk", limit=2)
+        assert len(limited) <= 2
+        assert len(all_docs) >= len(limited)
+
+    def test_does_not_include_other_projects(self, backend):
+        backend.ingest(SessionData(
+            session_id="s1", project="alpha",
+            notes="We decided to use Redis.", source="manual",
+            timestamp="2026-04-09T12:00:00Z",
+        ))
+        backend.ingest(SessionData(
+            session_id="s2", project="beta",
+            notes="We decided to use Postgres.", source="manual",
+            timestamp="2026-04-09T12:00:00Z",
+        ))
+        docs = backend.get_project_documents("alpha")
+        for d in docs:
+            assert d["metadata"]["project"] == "alpha"
+
+
 class TestNativeBackendStats:
     """Validate stats reporting."""
 

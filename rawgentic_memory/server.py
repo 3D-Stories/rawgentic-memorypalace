@@ -10,12 +10,13 @@ import asyncio
 import time
 from dataclasses import asdict
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from rawgentic_memory.backend import MemoryBackend
 from rawgentic_memory.models import SessionData
+from rawgentic_memory.wakeup import generate_wakeup
 
 # Endpoints excluded from idle timeout tracking — monitoring calls
 # should not keep the server alive.
@@ -47,6 +48,7 @@ class ReindexRequest(BaseModel):
 def create_app(
     idle_timeout: int = 14400,
     backend: MemoryBackend | None = None,
+    l0_path: str | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -54,6 +56,7 @@ def create_app(
         idle_timeout: Seconds of inactivity before the server shuts down.
                       Default 14400 (4 hours). Set to 0 to disable.
         backend: Memory backend instance. If None, data endpoints return 503.
+        l0_path: Path to the L0 identity file for /wakeup. If None, L0 is skipped.
     """
     app = FastAPI(title="rawgentic-memorypalace", docs_url=None, redoc_url=None)
     app.state.start_time = time.monotonic()
@@ -61,6 +64,7 @@ def create_app(
     app.state.idle_timeout = idle_timeout
     app.state.server = None  # Set by run_server() for programmatic shutdown
     app.state.backend = backend
+    app.state.l0_path = l0_path
 
     @app.middleware("http")
     async def track_activity(request: Request, call_next):
@@ -146,6 +150,15 @@ def create_app(
         result = app.state.backend.reindex(req.source_dirs)
         return JSONResponse(asdict(result))
 
+    @app.get("/wakeup")
+    async def wakeup(project: str = Query(default="", max_length=128)):
+        ctx = generate_wakeup(
+            backend=app.state.backend,
+            project=project or None,
+            l0_path=app.state.l0_path,
+        )
+        return JSONResponse(asdict(ctx))
+
     return app
 
 
@@ -173,14 +186,22 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--timeout", type=int, default=14400,
         help="Idle timeout in seconds before auto-shutdown (default: 14400 = 4h, 0 to disable)",
     )
+    parser.add_argument(
+        "--l0-path", type=str, default=None,
+        help="Path to L0 identity file for /wakeup (default: None, L0 layer skipped)",
+    )
     return parser.parse_args(argv)
 
 
-def run_server(port: int = 8420, idle_timeout: int = 14400) -> None:
+def run_server(
+    port: int = 8420,
+    idle_timeout: int = 14400,
+    l0_path: str | None = None,
+) -> None:
     """Start the server with idle timeout watcher."""
     import uvicorn
 
-    app = create_app(idle_timeout=idle_timeout)
+    app = create_app(idle_timeout=idle_timeout, l0_path=l0_path)
     config = uvicorn.Config(
         app,
         host="127.0.0.1",
@@ -200,4 +221,4 @@ def run_server(port: int = 8420, idle_timeout: int = 14400) -> None:
 
 if __name__ == "__main__":
     args = _parse_args()
-    run_server(port=args.port, idle_timeout=args.timeout)
+    run_server(port=args.port, idle_timeout=args.timeout, l0_path=args.l0_path)
