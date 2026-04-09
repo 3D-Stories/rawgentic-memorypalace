@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import time
+from collections import OrderedDict
 from dataclasses import asdict
 
 from fastapi import FastAPI, Query, Request
@@ -15,8 +16,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from rawgentic_memory.backend import MemoryBackend
-from rawgentic_memory.models import SessionData
+from rawgentic_memory.models import IngestResult, SessionData
 from rawgentic_memory.wakeup import generate_wakeup
+
+_INGEST_OFFSET_MAX_ENTRIES = 512
 
 # Endpoints excluded from idle timeout tracking — monitoring calls
 # should not keep the server alive.
@@ -65,6 +68,9 @@ def create_app(
     app.state.server = None  # Set by run_server() for programmatic shutdown
     app.state.backend = backend
     app.state.l0_path = l0_path
+    # Offset-based incremental ingest: tracks byte position per (project:session_id)
+    app.state.ingest_offsets: OrderedDict[str, int] = OrderedDict()
+    app.state.ingest_locks: dict[str, asyncio.Lock] = {}
 
     @app.middleware("http")
     async def track_activity(request: Request, call_next):
@@ -114,15 +120,45 @@ def create_app(
                 {"error": "No backend available"},
                 status_code=503,
             )
-        data = SessionData(
-            session_id=req.session_id,
-            project=req.project,
-            notes=req.notes,
-            source=req.source,
-            timestamp=req.timestamp,
-            source_file=req.source_file,
-        )
-        result = app.state.backend.ingest(data)
+
+        # Empty notes — nothing to process
+        if not req.notes or not req.notes.strip():
+            return JSONResponse(asdict(IngestResult(indexed=0, skipped=1)))
+
+        # Offset-based incremental processing
+        offset_key = f"{req.project}:{req.session_id}"
+
+        # Per-key lock to prevent TOCTOU races under concurrent triggers
+        if offset_key not in app.state.ingest_locks:
+            app.state.ingest_locks[offset_key] = asyncio.Lock()
+
+        async with app.state.ingest_locks[offset_key]:
+            last_offset = app.state.ingest_offsets.get(offset_key, 0)
+            content_len = len(req.notes)
+
+            # Content not longer than last ingest — skip
+            if content_len <= last_offset:
+                return JSONResponse(asdict(IngestResult(indexed=0, skipped=1)))
+
+            # Extract only the new delta
+            new_content = req.notes[last_offset:]
+
+            data = SessionData(
+                session_id=req.session_id,
+                project=req.project,
+                notes=new_content,
+                source=req.source,
+                timestamp=req.timestamp,
+                source_file=req.source_file,
+            )
+            result = app.state.backend.ingest(data)
+
+            # Update offset and enforce LRU cap
+            app.state.ingest_offsets[offset_key] = content_len
+            app.state.ingest_offsets.move_to_end(offset_key)
+            while len(app.state.ingest_offsets) > _INGEST_OFFSET_MAX_ENTRIES:
+                app.state.ingest_offsets.popitem(last=False)
+
         return JSONResponse(asdict(result))
 
     @app.post("/search")

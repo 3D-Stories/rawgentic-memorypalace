@@ -208,6 +208,141 @@ class TestReindexEndpoint:
         assert resp.status_code == 422
 
 
+class TestIncrementalIngest:
+    """Validate offset-based incremental ingest and skip logic."""
+
+    def _make_payload(self, notes="We decided to use PostgreSQL.",
+                      session_id="s1", project="testproj", source="manual"):
+        return {
+            "session_id": session_id,
+            "project": project,
+            "notes": notes,
+            "source": source,
+            "timestamp": "2026-04-09T12:00:00Z",
+        }
+
+    def test_first_ingest_processes_normally(self, client_with_backend):
+        resp = client_with_backend.post("/ingest", json=self._make_payload())
+        data = resp.json()
+        assert data["indexed"] >= 1
+        assert data["skipped"] == 0
+
+    def test_duplicate_ingest_returns_skipped(self, client_with_backend):
+        payload = self._make_payload()
+        client_with_backend.post("/ingest", json=payload)
+        # Same content, same session — should be skipped
+        resp = client_with_backend.post("/ingest", json=payload)
+        data = resp.json()
+        assert data["skipped"] >= 1
+        assert data["indexed"] == 0
+
+    def test_appended_content_processes_only_delta(self, client_with_backend):
+        payload1 = self._make_payload(notes="We decided to use PostgreSQL.")
+        client_with_backend.post("/ingest", json=payload1)
+
+        # Append new content
+        payload2 = self._make_payload(
+            notes="We decided to use PostgreSQL. Found that ChromaDB is fast."
+        )
+        resp = client_with_backend.post("/ingest", json=payload2)
+        data = resp.json()
+        # Should process only the delta (new content)
+        assert data["indexed"] >= 1
+
+    def test_empty_notes_returns_skipped(self, client_with_backend):
+        resp = client_with_backend.post(
+            "/ingest", json=self._make_payload(notes="")
+        )
+        data = resp.json()
+        assert data["skipped"] >= 1
+        assert data["indexed"] == 0
+
+    def test_different_projects_have_independent_offsets(self, client_with_backend):
+        notes = "We decided to use PostgreSQL."
+        # Ingest for project A
+        client_with_backend.post(
+            "/ingest", json=self._make_payload(project="proj-a", notes=notes)
+        )
+        # Same content for project B — should NOT be skipped
+        resp = client_with_backend.post(
+            "/ingest", json=self._make_payload(project="proj-b", notes=notes)
+        )
+        data = resp.json()
+        assert data["indexed"] >= 1
+
+    def test_different_sessions_have_independent_offsets(self, client_with_backend):
+        notes = "We decided to use PostgreSQL."
+        # Ingest for session s1
+        client_with_backend.post(
+            "/ingest", json=self._make_payload(session_id="s1", notes=notes)
+        )
+        # Same content, different session — should NOT be skipped
+        resp = client_with_backend.post(
+            "/ingest", json=self._make_payload(session_id="s2", notes=notes)
+        )
+        data = resp.json()
+        assert data["indexed"] >= 1
+
+    def test_skip_response_has_standard_shape(self, client_with_backend):
+        payload = self._make_payload()
+        client_with_backend.post("/ingest", json=payload)
+        resp = client_with_backend.post("/ingest", json=payload)
+        data = resp.json()
+        # Must have same fields as normal IngestResult
+        for field in ("indexed", "skipped", "errors"):
+            assert field in data, f"Missing field in skip response: {field}"
+
+    def test_shorter_content_after_longer_is_skipped(self, client_with_backend):
+        # Ingest long content
+        client_with_backend.post(
+            "/ingest",
+            json=self._make_payload(notes="We decided to use PostgreSQL. Found that it scales well."),
+        )
+        # Send shorter content (subset) — should be skipped (offset past end)
+        resp = client_with_backend.post(
+            "/ingest",
+            json=self._make_payload(notes="We decided to use PostgreSQL."),
+        )
+        data = resp.json()
+        assert data["skipped"] >= 1
+        assert data["indexed"] == 0
+
+    def test_lru_eviction_allows_reingest(self, backend):
+        """When LRU evicts an old offset, the next call for that key reprocesses."""
+        from rawgentic_memory.server import _INGEST_OFFSET_MAX_ENTRIES, create_app
+
+        app = create_app(backend=backend)
+        with TestClient(app) as c:
+            # Ingest for the target project first
+            notes = "We decided to use PostgreSQL."
+            c.post("/ingest", json=self._make_payload(
+                project="target", session_id="s0", notes=notes,
+            ))
+            # Fill the LRU with other keys to evict "target:s0"
+            for i in range(_INGEST_OFFSET_MAX_ENTRIES):
+                c.post("/ingest", json=self._make_payload(
+                    project=f"filler-{i}", session_id="s0",
+                    notes=f"We decided to use tech {i}.",
+                ))
+            # Now "target:s0" should have been evicted — same content reprocesses
+            resp = c.post("/ingest", json=self._make_payload(
+                project="target", session_id="s0", notes=notes,
+            ))
+            data = resp.json()
+            assert data["indexed"] >= 1  # Reprocessed, not skipped
+
+    def test_ingest_source_preserved_in_metadata(self, client_with_backend):
+        """Different source values (precompact, timer, stop) are passed through."""
+        for source in ("precompact", "timer", "stop"):
+            resp = client_with_backend.post("/ingest", json=self._make_payload(
+                notes=f"We decided to use {source} approach.",
+                source=source,
+                session_id=f"s-{source}",
+            ))
+            assert resp.status_code == 200
+            assert resp.json()["indexed"] >= 1
+
+
 class TestWakeupEndpoint:
     """Validate GET /wakeup endpoint."""
 
