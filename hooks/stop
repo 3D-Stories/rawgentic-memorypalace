@@ -1,0 +1,21 @@
+#!/bin/bash
+# Hook: Stop
+# Synchronous final flush — calls /ingest to capture remaining session data.
+# Graceful degradation: exits 0 if memory server is unreachable.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
+
+read_hook_input
+
+PROJECT=$(get_field "cwd" | xargs basename 2>/dev/null || echo "unknown")
+# Sanitize project name to safe URL chars
+PROJECT=$(echo "$PROJECT" | tr -cd 'a-zA-Z0-9_-')
+PROJECT="${PROJECT:-unknown}"
+
+_debug "Stop event — synchronous final flush ingest"
+call_memory_server "/ingest?project=${PROJECT}&flush=true" "POST" >/dev/null 2>&1 || true
+
+exit 0
