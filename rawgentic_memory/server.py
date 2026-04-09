@@ -3,30 +3,64 @@
 Run via: python3 -m rawgentic_memory.server --port 8420 --timeout 14400
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import time
+from dataclasses import asdict
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+from rawgentic_memory.backend import MemoryBackend
+from rawgentic_memory.models import SessionData
 
 # Endpoints excluded from idle timeout tracking — monitoring calls
 # should not keep the server alive.
 _MONITORING_PATHS = frozenset({"/healthz", "/stats"})
 
 
-def create_app(idle_timeout: int = 14400) -> FastAPI:
+# --- Request/response models for FastAPI validation ---
+
+class IngestRequest(BaseModel):
+    session_id: str
+    project: str
+    notes: str
+    source: str
+    timestamp: str
+    source_file: str = ""
+
+
+class SearchRequest(BaseModel):
+    query: str
+    project: str | None = None
+    memory_type: str | None = None
+    limit: int = 10
+
+
+class ReindexRequest(BaseModel):
+    source_dirs: list[str]
+
+
+def create_app(
+    idle_timeout: int = 14400,
+    backend: MemoryBackend | None = None,
+) -> FastAPI:
     """Create and configure the FastAPI application.
 
     Args:
         idle_timeout: Seconds of inactivity before the server shuts down.
                       Default 14400 (4 hours). Set to 0 to disable.
+        backend: Memory backend instance. If None, data endpoints return 503.
     """
     app = FastAPI(title="rawgentic-memorypalace", docs_url=None, redoc_url=None)
     app.state.start_time = time.monotonic()
     app.state.last_activity = time.monotonic()
     app.state.idle_timeout = idle_timeout
     app.state.server = None  # Set by run_server() for programmatic shutdown
+    app.state.backend = backend
 
     @app.middleware("http")
     async def track_activity(request: Request, call_next):
@@ -38,25 +72,79 @@ def create_app(idle_timeout: int = 14400) -> FastAPI:
     @app.get("/healthz")
     async def healthz():
         uptime = time.monotonic() - app.state.start_time
+        native_available = False
+        if app.state.backend is not None:
+            native_available = app.state.backend.stats().available
         return JSONResponse({
             "status": "ok",
             "uptime": round(uptime, 2),
             "backends": {
-                "native": False,
+                "native": native_available,
                 "mempalace": False,
             },
         })
 
     @app.get("/stats")
     async def stats():
+        native_stats = {"doc_count": 0, "available": False}
+        last_ingest = None
+        index_size_bytes = 0
+        if app.state.backend is not None:
+            bs = app.state.backend.stats()
+            native_stats = {"doc_count": bs.doc_count, "available": bs.available}
+            last_ingest = bs.last_ingest
+            index_size_bytes = bs.index_size_bytes
         return JSONResponse({
             "backends": {
-                "native": {"doc_count": 0, "available": False},
+                "native": native_stats,
                 "mempalace": {"doc_count": 0, "available": False},
             },
-            "last_ingest": None,
-            "index_size_bytes": 0,
+            "last_ingest": last_ingest,
+            "index_size_bytes": index_size_bytes,
         })
+
+    @app.post("/ingest")
+    async def ingest(req: IngestRequest):
+        if app.state.backend is None:
+            return JSONResponse(
+                {"error": "No backend available"},
+                status_code=503,
+            )
+        data = SessionData(
+            session_id=req.session_id,
+            project=req.project,
+            notes=req.notes,
+            source=req.source,
+            timestamp=req.timestamp,
+            source_file=req.source_file,
+        )
+        result = app.state.backend.ingest(data)
+        return JSONResponse(asdict(result))
+
+    @app.post("/search")
+    async def search(req: SearchRequest):
+        if app.state.backend is None:
+            return JSONResponse(
+                {"error": "No backend available"},
+                status_code=503,
+            )
+        results = app.state.backend.search(
+            query=req.query,
+            project=req.project,
+            memory_type=req.memory_type,
+            limit=req.limit,
+        )
+        return JSONResponse({"results": [asdict(r) for r in results]})
+
+    @app.post("/reindex")
+    async def reindex(req: ReindexRequest):
+        if app.state.backend is None:
+            return JSONResponse(
+                {"error": "No backend available"},
+                status_code=503,
+            )
+        result = app.state.backend.reindex(req.source_dirs)
+        return JSONResponse(asdict(result))
 
     return app
 
