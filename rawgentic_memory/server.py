@@ -10,7 +10,7 @@ import asyncio
 import time
 from dataclasses import asdict
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -47,6 +47,7 @@ class ReindexRequest(BaseModel):
 def create_app(
     idle_timeout: int = 14400,
     backend: MemoryBackend | None = None,
+    l0_path: str | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -54,6 +55,7 @@ def create_app(
         idle_timeout: Seconds of inactivity before the server shuts down.
                       Default 14400 (4 hours). Set to 0 to disable.
         backend: Memory backend instance. If None, data endpoints return 503.
+        l0_path: Path to the L0 identity file for /wakeup. If None, L0 is skipped.
     """
     app = FastAPI(title="rawgentic-memorypalace", docs_url=None, redoc_url=None)
     app.state.start_time = time.monotonic()
@@ -61,6 +63,7 @@ def create_app(
     app.state.idle_timeout = idle_timeout
     app.state.server = None  # Set by run_server() for programmatic shutdown
     app.state.backend = backend
+    app.state.l0_path = l0_path
 
     @app.middleware("http")
     async def track_activity(request: Request, call_next):
@@ -145,6 +148,17 @@ def create_app(
             )
         result = app.state.backend.reindex(req.source_dirs)
         return JSONResponse(asdict(result))
+
+    @app.get("/wakeup")
+    async def wakeup(project: str = Query(default="", max_length=128)):
+        from rawgentic_memory.wakeup import generate_wakeup
+
+        ctx = generate_wakeup(
+            backend=app.state.backend,
+            project=project or None,
+            l0_path=app.state.l0_path,
+        )
+        return JSONResponse(asdict(ctx))
 
     return app
 

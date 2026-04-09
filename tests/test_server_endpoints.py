@@ -206,3 +206,80 @@ class TestReindexEndpoint:
     def test_reindex_missing_source_dirs_returns_422(self, client_with_backend):
         resp = client_with_backend.post("/reindex", json={})
         assert resp.status_code == 422
+
+
+class TestWakeupEndpoint:
+    """Validate GET /wakeup endpoint."""
+
+    def _ingest_sample(self, client):
+        client.post("/ingest", json={
+            "session_id": "s1",
+            "project": "testproj",
+            "notes": "We decided to use PostgreSQL. Found that ChromaDB is fast.",
+            "source": "manual",
+            "timestamp": "2026-04-09T12:00:00Z",
+        })
+
+    def test_wakeup_returns_200(self, client_with_backend):
+        resp = client_with_backend.get("/wakeup?project=testproj")
+        assert resp.status_code == 200
+
+    def test_wakeup_returns_json_with_expected_fields(self, client_with_backend):
+        resp = client_with_backend.get("/wakeup?project=testproj")
+        data = resp.json()
+        for field in ("text", "tokens", "layers", "backend"):
+            assert field in data, f"Missing field: {field}"
+
+    def test_wakeup_returns_l1_after_ingest(self, client_with_backend):
+        self._ingest_sample(client_with_backend)
+        resp = client_with_backend.get("/wakeup?project=testproj")
+        data = resp.json()
+        assert "L1" in data["layers"]
+        assert data["tokens"] > 0
+        assert len(data["text"]) > 0
+
+    def test_wakeup_reflects_ingested_data(self, client_with_backend):
+        self._ingest_sample(client_with_backend)
+        resp = client_with_backend.get("/wakeup?project=testproj")
+        data = resp.json()
+        assert "PostgreSQL" in data["text"] or "ChromaDB" in data["text"]
+
+    def test_wakeup_empty_project_returns_200(self, client_with_backend):
+        resp = client_with_backend.get("/wakeup")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["layers"] == [] or "L0" in data["layers"]
+
+    def test_wakeup_without_backend_returns_200(self, client_no_backend):
+        resp = client_no_backend.get("/wakeup?project=test")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Graceful degradation — empty context
+        assert data["text"] == ""
+        assert data["layers"] == []
+
+    def test_wakeup_with_l0_file(self, backend, tmp_path):
+        from rawgentic_memory.server import create_app
+        l0_file = tmp_path / "l0.md"
+        l0_file.write_text("I am a developer working on testproj.")
+        app = create_app(backend=backend, l0_path=str(l0_file))
+        with TestClient(app) as c:
+            resp = c.get("/wakeup?project=testproj")
+            data = resp.json()
+            assert "L0" in data["layers"]
+            assert "developer" in data["text"]
+
+    def test_wakeup_backend_native(self, client_with_backend):
+        resp = client_with_backend.get("/wakeup?project=testproj")
+        assert resp.json()["backend"] == "native"
+
+    def test_wakeup_resets_idle_timer(self, app_with_backend, client_with_backend):
+        initial = app_with_backend.state.last_activity
+        time.sleep(0.05)
+        client_with_backend.get("/wakeup?project=testproj")
+        assert app_with_backend.state.last_activity > initial
+
+    def test_wakeup_project_too_long_returns_422(self, client_with_backend):
+        long_project = "a" * 200
+        resp = client_with_backend.get(f"/wakeup?project={long_project}")
+        assert resp.status_code == 422
