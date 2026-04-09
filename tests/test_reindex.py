@@ -1,27 +1,19 @@
-"""Tests for NativeBackend.reindex() — rebuilding index from source files."""
+"""Tests for MemPalaceBackend.reindex() — rebuilding index from source files."""
 
-import chromadb
 import pytest
 
 from rawgentic_memory.models import IngestResult
-from rawgentic_memory.native_backend import NativeBackend
 
 
 @pytest.fixture
-def chroma_client():
-    settings = chromadb.Settings(allow_reset=True, anonymized_telemetry=False)
-    client = chromadb.EphemeralClient(settings=settings)
-    client.reset()
-    return client
+def backend(tmp_path):
+    from rawgentic_memory.mempalace_backend import MemPalaceBackend
 
-
-@pytest.fixture
-def backend(chroma_client):
-    return NativeBackend(client=chroma_client)
+    return MemPalaceBackend(palace_path=str(tmp_path / "palace"))
 
 
 class TestReindex:
-    """Validate rebuilding the ChromaDB index from source files."""
+    """Validate rebuilding the MemPalace index from source files."""
 
     def test_reindex_returns_ingest_result(self, backend, tmp_path):
         (tmp_path / "proj.md").write_text("We decided to use FastAPI.")
@@ -98,20 +90,3 @@ class TestReindex:
         r2 = backend.reindex([str(tmp_path)])
         # Same content = same doc IDs = upsert, not duplicate
         assert backend.stats().doc_count == r1.indexed
-
-    def test_reindex_after_corruption(self, backend, chroma_client, tmp_path):
-        """Simulates re-indexing after ChromaDB data loss."""
-        (tmp_path / "proj.md").write_text(
-            "We decided to use PostgreSQL.\nDeployed the server."
-        )
-        backend.reindex([str(tmp_path)])
-        original_count = backend.stats().doc_count
-        assert original_count >= 2
-
-        # Simulate corruption: reset clears all data
-        chroma_client.reset()
-        assert backend.stats().doc_count == 0
-
-        # Re-index recovers
-        backend.reindex([str(tmp_path)])
-        assert backend.stats().doc_count == original_count
