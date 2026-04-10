@@ -12,6 +12,8 @@
 # All hosts can reach the server at http://<this-host>:8420
 # Set MEMORY_SERVER_URL=http://10.0.17.205:8420 on remote machines.
 
+name: rawgentic-memory
+
 services:
   memory-server:
     build:
@@ -22,7 +24,7 @@ services:
     ports:
       - "8420:8420"
     volumes:
-      - palace-data:/root/.mempalace/palace
+      - palace-data:/home/app/.mempalace/palace
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8420/healthz', timeout=5)"]
       interval: 30s
