@@ -87,7 +87,7 @@ Two instances of [memory-palace-web-frontend](https://github.com/tomsalphaclawbo
 ### Quick start
 
 ```bash
-cd frontend
+cd ~/.claude/plugins/cache/rawgentic-memorypalace/rawgentic-memorypalace/0.1.0/frontend
 cp .env.example .env          # edit NATIVE_CHROMADB_PATH to match your data
 docker compose up -d --build   # first run builds the image (~2 min)
 ```
