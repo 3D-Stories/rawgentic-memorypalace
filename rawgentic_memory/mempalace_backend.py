@@ -32,11 +32,14 @@ try:
     from mempalace.miner import get_collection
     from mempalace.layers import MemoryStack
     from mempalace.config import DEFAULT_PALACE_PATH
+    from mempalace.knowledge_graph import KnowledgeGraph
 
     MEMPALACE_AVAILABLE = True
 except ImportError:
     MEMPALACE_AVAILABLE = False
     DEFAULT_PALACE_PATH = None
+
+_KG_DECISION_PREDICATE = "decided"
 
 
 def _drawer_id(wing: str, room: str, source_file: str, chunk_index: int) -> str:
@@ -56,6 +59,14 @@ class MemPalaceBackend:
         self._collection = get_collection(self._palace_path)
         self._available = True
         self._last_ingest: str | None = None
+
+        # KG co-located with palace — graceful degradation if init fails
+        self._kg = None
+        try:
+            kg_path = str(Path(self._palace_path).parent / "knowledge_graph.sqlite3")
+            self._kg = KnowledgeGraph(db_path=kg_path)
+        except Exception:
+            logger.warning("KG initialization failed, KG features disabled", exc_info=True)
 
     def ingest(self, session_data: SessionData) -> IngestResult:
         """Enrich session data and store via MemPalace palace structure."""
@@ -102,6 +113,20 @@ class MemPalaceBackend:
 
         self._collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
         self._last_ingest = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        # KG side-channel: create triples for decision-type segments
+        if self._kg is not None:
+            for seg in segments:
+                if seg.memory_type == "decision":
+                    try:
+                        self._kg.add_triple(
+                            subject=session_data.project,
+                            predicate=_KG_DECISION_PREDICATE,
+                            obj=seg.content,
+                            valid_from=session_data.timestamp,
+                        )
+                    except Exception:
+                        logger.warning("KG triple creation failed", exc_info=True)
 
         return IngestResult(indexed=len(ids), skipped=0, errors=0)
 
@@ -192,6 +217,16 @@ class MemPalaceBackend:
                 "metadata": result["metadatas"][i],
             })
         return docs
+
+    def query_entity(self, name: str, as_of: str | None = None) -> list[dict]:
+        """Query KG for all triples involving an entity."""
+        if self._kg is None:
+            return []
+        try:
+            return self._kg.query_entity(name, as_of=as_of, direction="outgoing")
+        except Exception:
+            logger.warning("KG query_entity failed for %s", name, exc_info=True)
+            return []
 
     def stats(self) -> BackendStats:
         """Return backend status and document counts."""

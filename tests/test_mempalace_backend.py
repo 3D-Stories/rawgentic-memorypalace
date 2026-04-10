@@ -218,3 +218,63 @@ class TestMemPalaceBackendGetProjectDocuments:
         docs = backend.get_project_documents("alpha")
         for doc in docs:
             assert doc["metadata"]["wing"] == "alpha"
+
+
+class TestKGIngestSideChannel:
+    """Validate KG triple creation during ingest for decision-type segments."""
+
+    def test_decision_ingest_creates_kg_triple(self, backend):
+        """AC1: decision segments should create KG triples."""
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        assert len(triples) >= 1
+
+    def test_decision_triple_has_correct_subject(self, backend):
+        backend.ingest(_session(project="grocusave"))
+        triples = backend.query_entity("grocusave")
+        assert triples[0]["subject"] == "grocusave"
+
+    def test_decision_triple_has_decided_predicate(self, backend):
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        assert triples[0]["predicate"] == "decided"
+
+    def test_decision_triple_object_matches_content(self, backend):
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        assert "PostgreSQL" in triples[0]["object"]
+
+    def test_decision_triple_has_valid_from(self, backend):
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        assert triples[0]["valid_from"] == "2026-04-09T12:00:00Z"
+
+    def test_decision_triple_is_current(self, backend):
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        assert triples[0]["current"] is True
+
+    def test_non_decision_ingest_no_kg_triple(self, backend):
+        """Non-decision segments should NOT create KG triples."""
+        backend.ingest(_session(notes="Found that ChromaDB is fast."))
+        triples = backend.query_entity("testproj")
+        assert len(triples) == 0
+
+    def test_multiple_decisions_create_multiple_triples(self, backend):
+        notes = "We decided to use PostgreSQL. We decided to use Redis."
+        backend.ingest(_session(notes=notes))
+        triples = backend.query_entity("testproj")
+        assert len(triples) >= 2
+
+    def test_kg_failure_does_not_block_ingest(self, backend):
+        """KG failure should not prevent ChromaDB ingest from succeeding."""
+        # Corrupt the KG to force failures
+        backend._kg = None
+        result = backend.ingest(_session())
+        # ChromaDB ingest should still succeed
+        assert result.indexed >= 1
+
+    def test_kg_init_creates_kg_attribute(self, backend):
+        """Backend should have a _kg attribute after initialization."""
+        assert hasattr(backend, "_kg")
+        assert backend._kg is not None
