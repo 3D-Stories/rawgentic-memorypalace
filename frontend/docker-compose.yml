@@ -1,0 +1,40 @@
+# Dual frontend instances for browsing memory backend data.
+# See Issue #13 (Story 5.2) and docs/frontend-decision.md.
+#
+# Usage:
+#   cp .env.example .env   # edit paths to match your data directories
+#   docker compose up -d
+#
+# First run builds the image from the upstream repo (~2 min).
+# Subsequent runs reuse the cached image.
+
+services:
+  native-frontend:
+    image: memory-palace-web-frontend:latest
+    build: https://github.com/tomsalphaclawbot/memory-palace-web-frontend.git
+    container_name: rawgentic-native-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8098:8099"
+    volumes:
+      - ${NATIVE_CHROMADB_PATH:?Set NATIVE_CHROMADB_PATH in .env}:/app/palace:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  mempalace-frontend:
+    image: memory-palace-web-frontend:latest
+    build: https://github.com/tomsalphaclawbot/memory-palace-web-frontend.git
+    container_name: rawgentic-mempalace-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8099:8099"
+    volumes:
+      - ${MEMPALACE_CHROMADB_PATH:-~/.mempalace/palace}:/app/palace:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
