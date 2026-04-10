@@ -1,7 +1,5 @@
 """Tests for MemPalaceBackend — the thin bridge to mempalace library."""
 
-import hashlib
-
 import pytest
 
 from rawgentic_memory.models import (

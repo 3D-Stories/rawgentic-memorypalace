@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import time
 from collections import OrderedDict
 from dataclasses import asdict
@@ -16,6 +17,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from rawgentic_memory.models import IngestResult, SessionData, WakeupContext
+
+logger = logging.getLogger(__name__)
 
 _INGEST_OFFSET_MAX_ENTRIES = 512
 _KG_HISTORICAL_DEMOTION = 0.5
@@ -190,7 +193,7 @@ def create_app(
                 try:
                     invalidated |= app.state.backend.get_invalidated_decisions(proj)
                 except Exception:
-                    pass  # Degrade gracefully — skip demotion if KG fails
+                    logger.warning("KG demotion lookup failed for %s", proj, exc_info=True)
             # Apply demotion and re-sort
             if invalidated:
                 for r in results:

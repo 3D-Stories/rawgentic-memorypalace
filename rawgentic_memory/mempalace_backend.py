@@ -242,7 +242,7 @@ class MemPalaceBackend:
                 for t in existing
             )
             if found:
-                self._kg.invalidate(subject, predicate, obj)
+                self._kg.invalidate(subject, pred_normalized, obj)
                 result["found"] = True
         except Exception:
             logger.warning("KG invalidate failed", exc_info=True)
