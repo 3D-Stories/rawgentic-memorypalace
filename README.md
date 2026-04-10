@@ -7,7 +7,7 @@ Claude Code plugin providing long-term memory powered by [MemPalace](https://git
 rawgentic-memorypalace is the **operational chassis** around MemPalace's **memory engine**:
 
 - **MemPalace** handles: palace-organized storage (wings/rooms/drawers), semantic search, layered wake-up (L0+L1), and knowledge graphs
-- **rawgentic-memorypalace** adds: three ingestion triggers (PreCompact, timer, Stop), offset-based incremental dedup, lazy-start server lifecycle, `/recall` skill, and `/upgrade` skill
+- **rawgentic-memorypalace** adds: three ingestion triggers (PreCompact, timer, Stop), offset-based incremental dedup, lazy-start server lifecycle, `/recall` skill, `/upgrade` skill, and `/memory-ui` skill for web frontend management
 
 **Two integration paths coexist:**
 - Claude Code hooks (HTTP) → Our FastAPI server → MemPalace library API
@@ -68,7 +68,33 @@ All hooks degrade gracefully — if the memory server is unreachable, they exit 
 | Skill | Description |
 |-------|-------------|
 | `/recall <query>` | Semantic search over stored memories |
+| `/recall invalidate "<subject> decided <object>"` | Mark a decision as historical |
+| `/recall timeline <entity>` | View decision history for an entity |
 | `/upgrade` | Upgrade the mempalace dependency to latest version |
+| `/memory-ui up` | Start web frontend containers |
+| `/memory-ui down` | Stop web frontend containers |
+| `/memory-ui status` | Show container state, ports, and uptime |
+
+## Web Frontend
+
+Two instances of [memory-palace-web-frontend](https://github.com/tomsalphaclawbot/memory-palace-web-frontend) for visually browsing each backend's ChromaDB data:
+
+| Instance | URL | Data Source |
+|----------|-----|-------------|
+| Native backend browser | http://localhost:8098 | Native ChromaDB |
+| MemPalace backend browser | http://localhost:8099 | MemPalace palace |
+
+### Quick start
+
+```bash
+cd frontend
+cp .env.example .env          # edit NATIVE_CHROMADB_PATH to match your data
+docker compose up -d --build   # first run builds the image (~2 min)
+```
+
+Or use the skill: `/memory-ui up`
+
+See `docs/frontend-decision.md` for the architecture decision record.
 
 ## Data Migration
 
