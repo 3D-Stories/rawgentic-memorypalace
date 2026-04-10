@@ -29,11 +29,15 @@ This installs `mempalace>=3.0.0,<4.0` as a declared dependency.
 
 ## Configuration
 
-The memory server URL defaults to `http://127.0.0.1:8420`. Override via:
+The memory server URL is configured in this plugin's `CLAUDE.md` under `Memory Server Configuration`. The default is `http://127.0.0.1:8420`.
 
-```bash
-export MEMORY_SERVER_URL="http://127.0.0.1:8420"
+To point at a remote server, edit the URL in `CLAUDE.md`:
+
 ```
+MEMORY_SERVER_URL=http://10.0.17.205:8420
+```
+
+You can also override per-machine by adding a `Memory Server Configuration` section to your global `~/.claude/CLAUDE.md`.
 
 ### Debug Logging
 

@@ -39,14 +39,13 @@ If no arguments are provided, ask the user what they want to do and STOP.
 
 ### 2. Call the Memory Server
 
-The memory server URL is `${MEMORY_SERVER_URL:-http://127.0.0.1:8420}`.
+Read the `MEMORY_SERVER_URL` from the `Memory Server Configuration` section of CLAUDE.md. Use the URL exactly as configured there. If no such section exists, default to `http://127.0.0.1:8420`.
 
-Use the Bash tool to call the `/search` endpoint:
+Use the Bash tool to call the `/search` endpoint, substituting the URL you read:
 
 ```bash
-MEMORY_SERVER_URL="${MEMORY_SERVER_URL:-http://127.0.0.1:8420}"
 curl --silent --fail --connect-timeout 2 --max-time 10 \
-  -X POST "${MEMORY_SERVER_URL}/search" \
+  -X POST "MEMORY_SERVER_URL/search" \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg query "THE_QUERY" --arg project "PROJECT_OR_EMPTY" \
     'if $project == "" then {query: $query, limit: 10}
@@ -76,7 +75,7 @@ Check server logs at /tmp/memorypalace-server.log for details.
 **Any other non-zero exit — network or timeout error:**
 ```
 Could not reach memory server. Check that MEMORY_SERVER_URL is correct
-(current: ${MEMORY_SERVER_URL:-http://127.0.0.1:8420}).
+in the Memory Server Configuration section of CLAUDE.md.
 ```
 
 Do NOT attempt to start the server yourself. STOP after showing the appropriate message.
@@ -149,9 +148,8 @@ If the text doesn't contain "decided", tell the user: "Expected format: /rawgent
 **Call the endpoint:**
 
 ```bash
-MEMORY_SERVER_URL="${MEMORY_SERVER_URL:-http://127.0.0.1:8420}"
 curl --silent --fail --connect-timeout 2 --max-time 10 \
-  -X POST "${MEMORY_SERVER_URL}/kg/invalidate" \
+  -X POST "MEMORY_SERVER_URL/kg/invalidate" \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg subj "SUBJECT" --arg pred "decided" --arg obj "OBJECT" \
     '{subject: $subj, predicate: $pred, object: $obj}')"
@@ -184,9 +182,8 @@ If no entity name is provided, ask the user: "Which project or entity timeline d
 **Call the endpoint:**
 
 ```bash
-MEMORY_SERVER_URL="${MEMORY_SERVER_URL:-http://127.0.0.1:8420}"
 curl --silent --fail --connect-timeout 2 --max-time 10 \
-  "${MEMORY_SERVER_URL}/kg/timeline?entity=ENTITY_NAME"
+  "MEMORY_SERVER_URL/kg/timeline?entity=ENTITY_NAME"
 ```
 
 **Display the timeline** in chronological order (oldest to newest):
