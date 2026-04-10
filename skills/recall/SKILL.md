@@ -43,16 +43,25 @@ Read the `MEMORY_SERVER_URL` from the `Memory Server Configuration` section of C
 
 Use the Bash tool to call the `/search` endpoint, substituting the URL you read:
 
+If a project filter was specified, include the `project` field. Otherwise omit it.
+
+**Without project filter:**
 ```bash
 curl --silent --fail --connect-timeout 2 --max-time 10 \
   -X POST "MEMORY_SERVER_URL/search" \
   -H "Content-Type: application/json" \
-  -d "$(jq -n --arg query "THE_QUERY" --arg project "PROJECT_OR_EMPTY" \
-    'if $project == "" then {query: $query, limit: 10}
-     else {query: $query, project: $project, limit: 10} end')"
+  -d '{"query": "THE_QUERY", "limit": 10}'
 ```
 
-Replace `THE_QUERY` with the user's query and `PROJECT_OR_EMPTY` with the project name (or empty string if not specified).
+**With project filter:**
+```bash
+curl --silent --fail --connect-timeout 2 --max-time 10 \
+  -X POST "MEMORY_SERVER_URL/search" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "THE_QUERY", "project": "PROJECT_NAME", "limit": 10}'
+```
+
+Replace `THE_QUERY` and `PROJECT_NAME` with the actual values. Escape any double quotes in the query.
 
 ### 3. Handle Errors
 
@@ -151,9 +160,10 @@ If the text doesn't contain "decided", tell the user: "Expected format: /rawgent
 curl --silent --fail --connect-timeout 2 --max-time 10 \
   -X POST "MEMORY_SERVER_URL/kg/invalidate" \
   -H "Content-Type: application/json" \
-  -d "$(jq -n --arg subj "SUBJECT" --arg pred "decided" --arg obj "OBJECT" \
-    '{subject: $subj, predicate: $pred, object: $obj}')"
+  -d '{"subject": "SUBJECT", "predicate": "decided", "object": "OBJECT"}'
 ```
+
+Replace `SUBJECT` and `OBJECT` with the parsed values. Escape any double quotes.
 
 **Display confirmation:**
 
