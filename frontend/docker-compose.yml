@@ -32,7 +32,7 @@ services:
     ports:
       - "127.0.0.1:8099:8099"
     volumes:
-      - ${MEMPALACE_CHROMADB_PATH:-~/.mempalace/palace}:/app/palace:ro
+      - ${MEMPALACE_CHROMADB_PATH:-${HOME}/.mempalace/palace}:/app/palace:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/healthz', timeout=5)"]
       interval: 30s
