@@ -16,8 +16,8 @@ class TestDecisionDocStructure:
         assert DECISION_DOC.exists(), "Missing docs/frontend-decision.md"
 
     def test_has_executive_summary(self):
-        content = DECISION_DOC.read_text()
-        assert "# " in content, "Document must have a title heading"
+        content = DECISION_DOC.read_text().lower()
+        assert "executive summary" in content, "Document must have an Executive Summary section"
 
     def test_has_decision_statement(self):
         """AC3: Decision must be one of the three options."""
@@ -40,7 +40,7 @@ class TestEvaluationCriteria:
         )
 
     def test_evaluates_feature_completeness(self):
-        assert "feature" in self._read() and "complete" in self._read(), (
+        assert "feature completeness" in self._read(), (
             "Must evaluate feature completeness"
         )
 
@@ -50,7 +50,7 @@ class TestEvaluationCriteria:
         )
 
     def test_evaluates_license_compatibility(self):
-        assert "license" in self._read(), (
+        assert "license compatibility" in self._read(), (
             "Must evaluate license compatibility"
         )
 
