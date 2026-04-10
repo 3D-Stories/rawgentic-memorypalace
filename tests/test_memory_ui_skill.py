@@ -136,13 +136,13 @@ class TestDockerErrorHandling:
 
 
 class TestStatusNotRunning:
-    """AC4: Status must suggest /memory-ui up when containers are not running."""
+    """AC4: Status must suggest /rawgentic-memorypalace:memory-ui up when containers are not running."""
 
     def _read_skill(self):
         return SKILL_FILE.read_text()
 
     def test_suggests_up_when_not_running(self):
         content = self._read_skill()
-        assert "/memory-ui up" in content, (
-            "Skill must suggest '/memory-ui up' when containers are not running"
+        assert "/rawgentic-memorypalace:memory-ui up" in content, (
+            "Skill must suggest '/rawgentic-memorypalace:memory-ui up' when containers are not running"
         )

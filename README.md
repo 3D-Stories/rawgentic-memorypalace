@@ -7,7 +7,7 @@ Claude Code plugin providing long-term memory powered by [MemPalace](https://git
 rawgentic-memorypalace is the **operational chassis** around MemPalace's **memory engine**:
 
 - **MemPalace** handles: palace-organized storage (wings/rooms/drawers), semantic search, layered wake-up (L0+L1), and knowledge graphs
-- **rawgentic-memorypalace** adds: three ingestion triggers (PreCompact, timer, Stop), offset-based incremental dedup, lazy-start server lifecycle, `/recall` skill, `/upgrade` skill, and `/memory-ui` skill for web frontend management
+- **rawgentic-memorypalace** adds: three ingestion triggers (PreCompact, timer, Stop), offset-based incremental dedup, lazy-start server lifecycle, `/rawgentic-memorypalace:recall` skill, `/rawgentic-memorypalace:upgrade` skill, and `/rawgentic-memorypalace:memory-ui` skill for web frontend management
 
 **Two integration paths coexist:**
 - Claude Code hooks (HTTP) → Our FastAPI server → MemPalace library API
@@ -70,10 +70,10 @@ All hooks degrade gracefully — if the memory server is unreachable, they exit 
 | `/recall <query>` | Semantic search over stored memories |
 | `/recall invalidate "<subject> decided <object>"` | Mark a decision as historical |
 | `/recall timeline <entity>` | View decision history for an entity |
-| `/upgrade` | Upgrade the mempalace dependency to latest version |
-| `/memory-ui up` | Start web frontend containers |
-| `/memory-ui down` | Stop web frontend containers |
-| `/memory-ui status` | Show container state, ports, and uptime |
+| `/rawgentic-memorypalace:upgrade` | Upgrade the mempalace dependency to latest version |
+| `/rawgentic-memorypalace:memory-ui up` | Start web frontend containers |
+| `/rawgentic-memorypalace:memory-ui down` | Stop web frontend containers |
+| `/rawgentic-memorypalace:memory-ui status` | Show container state, ports, and uptime |
 
 ## Web Frontend
 
@@ -92,7 +92,7 @@ cp .env.example .env          # edit NATIVE_CHROMADB_PATH to match your data
 docker compose up -d --build   # first run builds the image (~2 min)
 ```
 
-Or use the skill: `/memory-ui up`
+Or use the skill: `/rawgentic-memorypalace:memory-ui up`
 
 See `docs/frontend-decision.md` for the architecture decision record.
 
