@@ -1,0 +1,20 @@
+{
+  "name": "rawgentic-memorypalace",
+  "description": "Long-term memory plugin for Claude Code — MemPalace-powered storage with intelligent ingestion triggers, semantic search, and wake-up context.",
+  "owner": {
+    "name": "3D-Stories",
+    "url": "https://github.com/3D-Stories"
+  },
+  "plugins": [
+    {
+      "name": "rawgentic-memorypalace",
+      "description": "Long-term memory plugin for Claude Code — MemPalace-powered storage with intelligent ingestion triggers, semantic search, and wake-up context.",
+      "version": "0.1.0",
+      "source": "./",
+      "author": {
+        "name": "3D-Stories",
+        "url": "https://github.com/3D-Stories"
+      }
+    }
+  ]
+}
