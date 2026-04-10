@@ -27,16 +27,16 @@ Manage the dual web frontend instances for browsing memory backend data.
 
 ### 1. Parse Subcommand
 
-Check the first word of the arguments:
+Check the first word of the arguments to determine which subcommand to run:
 
-- **`up`** -> go to Section 3
-- **`down`** -> go to Section 4
-- **`status`** -> go to Section 5
+- **`up`** -> after pre-flight (Section 2), go to Section 3
+- **`down`** -> after pre-flight (Section 2), go to Section 4
+- **`status`** -> after pre-flight (Section 2), go to Section 5
 - **No arguments or unrecognized** -> show usage above and STOP
 
 ### 2. Pre-flight Check — Docker Availability
 
-Before executing any subcommand, verify Docker is available:
+**Always run this before any subcommand.** Verify Docker is available:
 
 ```bash
 docker compose version 2>&1
