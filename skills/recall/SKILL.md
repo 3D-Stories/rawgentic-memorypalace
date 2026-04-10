@@ -1,7 +1,7 @@
 ---
 name: rawgentic-memorypalace:recall
-description: Search long-term memory by natural language query. Calls the memory server /search endpoint and displays results with content, project, memory_type, and similarity. Use when the user wants to find past decisions, discoveries, or events stored in memory.
-argument-hint: Natural language query, optionally with --project <name> to filter
+description: Search long-term memory, invalidate stale decisions, or view decision timelines. Supports subcommands: search (default), invalidate, timeline.
+argument-hint: <query> | invalidate "<subject> decided <object>" | timeline <entity> | --project <name>
 ---
 
 <role>
@@ -17,18 +17,25 @@ Search your long-term memory for past decisions, discoveries, and events.
 ```
 /recall <query>
 /recall <query> --project <project-name>
+/recall invalidate "<subject> decided <object>"
+/recall timeline <entity>
 ```
 
 ## Instructions
 
-### 1. Parse Arguments
+### 1. Parse Arguments — Subcommand Dispatch
 
-Extract the search query and optional flags from the arguments:
+Check the first word of the arguments to determine the subcommand:
 
+- **`invalidate`** → go to **Section 5: Invalidate a Decision**
+- **`timeline`** → go to **Section 6: View Timeline**
+- **Anything else** → treat as a search query, continue to Step 2
+
+For search queries, extract:
 - **Query text:** Everything that is not a flag. Remove surrounding quotes if present.
 - **`--project <name>`:** Optional. If present, filter results to this project only.
 
-If no query is provided, ask the user what they want to search for and STOP.
+If no arguments are provided, ask the user what they want to do and STOP.
 
 ### 2. Call the Memory Server
 
@@ -122,3 +129,83 @@ Each result MUST show:
 - **similarity** score and **timestamp** as metadata
 
 This ensures results from multiple projects are clearly labeled (AC4).
+
+---
+
+### 5. Invalidate a Decision
+
+When the first argument is `invalidate`, parse the remaining text as a KG triple to invalidate.
+
+**Parsing the triple:** The text after `invalidate` should contain: `"<subject> decided <object>"` (with or without quotes).
+
+- **Subject:** the first word (typically the project name)
+- **Predicate:** always `"decided"` (hardcoded for v1)
+- **Object:** everything after the word "decided"
+
+Example: `/recall invalidate "chorestory decided use Zod"` → subject=`chorestory`, predicate=`decided`, object=`use Zod`
+
+If the text doesn't contain "decided", tell the user: "Expected format: /recall invalidate \"<project> decided <description>\"" and STOP.
+
+**Call the endpoint:**
+
+```bash
+MEMORY_SERVER_URL="${MEMORY_SERVER_URL:-http://127.0.0.1:8420}"
+curl --silent --fail --connect-timeout 2 --max-time 10 \
+  -X POST "${MEMORY_SERVER_URL}/kg/invalidate" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --arg subj "SUBJECT" --arg pred "decided" --arg obj "OBJECT" \
+    '{subject: $subj, predicate: $pred, object: $obj}')"
+```
+
+**Display confirmation:**
+
+If `found` is true:
+```
+Invalidated: **<subject>** decided **<object>**
+This decision is now marked as historical and will be demoted in search results.
+```
+
+If `found` is false:
+```
+No matching active decision found for: <subject> decided <object>
+The triple may not exist or may already be invalidated.
+```
+
+Handle server errors the same as Section 3. STOP after displaying.
+
+---
+
+### 6. View Timeline
+
+When the first argument is `timeline`, the second argument is the entity name.
+
+If no entity name is provided, ask the user: "Which project or entity timeline do you want to see?" and STOP.
+
+**Call the endpoint:**
+
+```bash
+MEMORY_SERVER_URL="${MEMORY_SERVER_URL:-http://127.0.0.1:8420}"
+curl --silent --fail --connect-timeout 2 --max-time 10 \
+  "${MEMORY_SERVER_URL}/kg/timeline?entity=ENTITY_NAME"
+```
+
+**Display the timeline** in chronological order (oldest to newest):
+
+```
+## Decision Timeline: <entity>
+
+| # | Date | Decision | Status |
+|---|------|----------|--------|
+| 1 | 2026-01-15 | decided: use PostgreSQL | current |
+| 2 | 2026-02-20 | decided: use Zod | invalidated |
+| 3 | 2026-03-01 | decided: use Valibot | current |
+```
+
+Each entry MUST show:
+- **valid_from** date (formatted as YYYY-MM-DD)
+- **predicate** and **object** as the decision description
+- **Status:** "current" if `current: true`, "invalidated" if `current: false`
+
+If the timeline is empty: "No decision history found for <entity>." and STOP.
+
+Handle server errors the same as Section 3. STOP after displaying.

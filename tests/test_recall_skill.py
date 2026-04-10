@@ -103,3 +103,83 @@ class TestRecallSkillContent:
         assert "503" in body or "http error" in body.lower() or "unhealthy" in body.lower(), (
             "Skill must handle HTTP error case (e.g. 503 backend unavailable)"
         )
+
+
+class TestRecallInvalidateSubcommand:
+    """Validate /recall invalidate subcommand content (AC6)."""
+
+    def _read_body(self):
+        content = SKILL_FILE.read_text()
+        return content.split("---", 2)[2]
+
+    def test_invalidate_subcommand_documented(self):
+        body = self._read_body()
+        assert "invalidate" in body.lower(), (
+            "Skill must document the invalidate subcommand (AC6)"
+        )
+
+    def test_invalidate_calls_kg_endpoint(self):
+        body = self._read_body()
+        assert "/kg/invalidate" in body, (
+            "Invalidate subcommand must reference /kg/invalidate endpoint"
+        )
+
+    def test_invalidate_parses_triple(self):
+        body = self._read_body()
+        assert "subject" in body.lower() and "predicate" in body.lower(), (
+            "Invalidate must explain how to parse the triple"
+        )
+
+    def test_invalidate_shows_confirmation(self):
+        body = self._read_body()
+        assert "confirm" in body.lower() or "found" in body.lower(), (
+            "Invalidate must show confirmation of what was invalidated"
+        )
+
+
+class TestRecallTimelineSubcommand:
+    """Validate /recall timeline subcommand content (AC7)."""
+
+    def _read_body(self):
+        content = SKILL_FILE.read_text()
+        return content.split("---", 2)[2]
+
+    def test_timeline_subcommand_documented(self):
+        body = self._read_body()
+        assert "timeline" in body.lower(), (
+            "Skill must document the timeline subcommand (AC7)"
+        )
+
+    def test_timeline_calls_kg_endpoint(self):
+        body = self._read_body()
+        assert "/kg/timeline" in body, (
+            "Timeline subcommand must reference /kg/timeline endpoint"
+        )
+
+    def test_timeline_format_specified(self):
+        body = self._read_body()
+        assert "chronolog" in body.lower() or "oldest" in body.lower(), (
+            "Timeline must specify chronological display format"
+        )
+
+    def test_timeline_shows_current_status(self):
+        body = self._read_body()
+        assert "current" in body.lower() or "historical" in body.lower() or "invalidated" in body.lower(), (
+            "Timeline must show current/historical status per entry"
+        )
+
+
+class TestRecallSubcommandDispatch:
+    """Validate skill has subcommand dispatch logic."""
+
+    def _read_body(self):
+        content = SKILL_FILE.read_text()
+        return content.split("---", 2)[2]
+
+    def test_subcommand_dispatch_exists(self):
+        body = self._read_body()
+        # Must have some way to route between search, invalidate, timeline
+        assert ("subcommand" in body.lower() or "first argument" in body.lower()
+                or "first word" in body.lower()), (
+            "Skill must have subcommand dispatch logic"
+        )
