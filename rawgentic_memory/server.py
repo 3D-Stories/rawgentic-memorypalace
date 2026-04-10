@@ -283,6 +283,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Memory server for rawgentic-memorypalace plugin",
     )
     parser.add_argument(
+        "--host", type=str, default="127.0.0.1",
+        help="Host to bind to (default: 127.0.0.1, use 0.0.0.0 for Docker)",
+    )
+    parser.add_argument(
         "--port", type=int, default=8420,
         help="Port to bind to (default: 8420)",
     )
@@ -298,6 +302,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def run_server(
+    host: str = "127.0.0.1",
     port: int = 8420,
     idle_timeout: int = 14400,
     l0_path: str | None = None,
@@ -317,7 +322,7 @@ def run_server(
     app = create_app(idle_timeout=idle_timeout, backend=backend, l0_path=l0_path)
     config = uvicorn.Config(
         app,
-        host="127.0.0.1",
+        host=host,
         port=port,
         log_level="warning",
     )
@@ -334,4 +339,4 @@ def run_server(
 
 if __name__ == "__main__":
     args = _parse_args()
-    run_server(port=args.port, idle_timeout=args.timeout, l0_path=args.l0_path)
+    run_server(host=args.host, port=args.port, idle_timeout=args.timeout, l0_path=args.l0_path)
