@@ -1,7 +1,5 @@
 """Tests for MemPalaceBackend — the thin bridge to mempalace library."""
 
-import hashlib
-
 import pytest
 
 from rawgentic_memory.models import (
@@ -218,3 +216,190 @@ class TestMemPalaceBackendGetProjectDocuments:
         docs = backend.get_project_documents("alpha")
         for doc in docs:
             assert doc["metadata"]["wing"] == "alpha"
+
+
+class TestKGIngestSideChannel:
+    """Validate KG triple creation during ingest for decision-type segments."""
+
+    def test_decision_ingest_creates_kg_triple(self, backend):
+        """AC1: decision segments should create KG triples."""
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        assert len(triples) >= 1
+
+    def test_decision_triple_has_correct_subject(self, backend):
+        backend.ingest(_session(project="grocusave"))
+        triples = backend.query_entity("grocusave")
+        assert triples[0]["subject"] == "grocusave"
+
+    def test_decision_triple_has_decided_predicate(self, backend):
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        assert triples[0]["predicate"] == "decided"
+
+    def test_decision_triple_object_matches_content(self, backend):
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        assert "PostgreSQL" in triples[0]["object"]
+
+    def test_decision_triple_has_valid_from(self, backend):
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        assert triples[0]["valid_from"] == "2026-04-09T12:00:00Z"
+
+    def test_decision_triple_is_current(self, backend):
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        assert triples[0]["current"] is True
+
+    def test_non_decision_ingest_no_kg_triple(self, backend):
+        """Non-decision segments should NOT create KG triples."""
+        backend.ingest(_session(notes="Found that ChromaDB is fast."))
+        triples = backend.query_entity("testproj")
+        assert len(triples) == 0
+
+    def test_multiple_decisions_create_multiple_triples(self, backend):
+        notes = "We decided to use PostgreSQL. We decided to use Redis."
+        backend.ingest(_session(notes=notes))
+        triples = backend.query_entity("testproj")
+        assert len(triples) >= 2
+
+    def test_kg_failure_does_not_block_ingest(self, backend):
+        """KG failure should not prevent ChromaDB ingest from succeeding."""
+        # Corrupt the KG to force failures
+        backend._kg = None
+        result = backend.ingest(_session())
+        # ChromaDB ingest should still succeed
+        assert result.indexed >= 1
+
+    def test_kg_init_creates_kg_attribute(self, backend):
+        """Backend should have a _kg attribute after initialization."""
+        assert hasattr(backend, "_kg")
+        assert backend._kg is not None
+
+
+class TestKGInvalidateTriple:
+    """Validate KG triple invalidation."""
+
+    def _ingest_decision(self, backend, project="testproj",
+                         content="We decided to use PostgreSQL for the database."):
+        backend.ingest(_session(project=project, notes=content))
+
+    def test_invalidate_existing_triple(self, backend):
+        self._ingest_decision(backend)
+        triples = backend.query_entity("testproj")
+        obj = triples[0]["object"]
+        result = backend.invalidate_triple("testproj", "decided", obj)
+        assert result["found"] is True
+
+    def test_invalidate_sets_valid_to(self, backend):
+        self._ingest_decision(backend)
+        triples = backend.query_entity("testproj")
+        obj = triples[0]["object"]
+        backend.invalidate_triple("testproj", "decided", obj)
+        # After invalidation, triple should be non-current
+        updated = backend.query_entity("testproj")
+        invalidated = [t for t in updated if t["current"] is False]
+        assert len(invalidated) >= 1
+
+    def test_invalidate_nonexistent_returns_not_found(self, backend):
+        result = backend.invalidate_triple("nonexistent", "decided", "fake content")
+        assert result["found"] is False
+
+    def test_invalidate_echoes_triple_details(self, backend):
+        self._ingest_decision(backend)
+        triples = backend.query_entity("testproj")
+        obj = triples[0]["object"]
+        result = backend.invalidate_triple("testproj", "decided", obj)
+        assert result["subject"] == "testproj"
+        assert result["predicate"] == "decided"
+        assert result["object"] == obj
+
+    def test_invalidate_with_kg_none_returns_not_found(self, backend):
+        backend._kg = None
+        result = backend.invalidate_triple("testproj", "decided", "anything")
+        assert result["found"] is False
+
+
+class TestKGTimeline:
+    """Validate KG timeline retrieval."""
+
+    def test_timeline_returns_list(self, backend):
+        backend.ingest(_session())
+        result = backend.get_timeline("testproj")
+        assert isinstance(result, list)
+
+    def test_timeline_includes_decisions(self, backend):
+        backend.ingest(_session())
+        tl = backend.get_timeline("testproj")
+        assert len(tl) >= 1
+
+    def test_timeline_chronological_order(self, backend):
+        backend.ingest(_session(notes="We decided to use PostgreSQL.",
+                                project="testproj"))
+        backend.ingest(SessionData(
+            session_id="s2", project="testproj",
+            notes="We decided to use Redis.",
+            source="test", timestamp="2026-05-01T12:00:00Z",
+            source_file="session2.md",
+        ))
+        tl = backend.get_timeline("testproj")
+        if len(tl) >= 2:
+            assert tl[0]["valid_from"] <= tl[1]["valid_from"]
+
+    def test_timeline_shows_invalidated_as_non_current(self, backend):
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        obj = triples[0]["object"]
+        backend.invalidate_triple("testproj", "decided", obj)
+        tl = backend.get_timeline("testproj")
+        invalidated = [t for t in tl if t["current"] is False]
+        assert len(invalidated) >= 1
+
+    def test_timeline_empty_entity(self, backend):
+        tl = backend.get_timeline("nonexistent")
+        assert tl == []
+
+    def test_timeline_with_kg_none(self, backend):
+        backend._kg = None
+        tl = backend.get_timeline("testproj")
+        assert tl == []
+
+
+class TestKGGetInvalidatedDecisions:
+    """Validate get_invalidated_decisions helper for search demotion."""
+
+    def test_returns_set(self, backend):
+        result = backend.get_invalidated_decisions("testproj")
+        assert isinstance(result, set)
+
+    def test_empty_when_no_invalidations(self, backend):
+        backend.ingest(_session())
+        result = backend.get_invalidated_decisions("testproj")
+        assert len(result) == 0
+
+    def test_contains_invalidated_content(self, backend):
+        backend.ingest(_session())
+        triples = backend.query_entity("testproj")
+        obj = triples[0]["object"]
+        backend.invalidate_triple("testproj", "decided", obj)
+        result = backend.get_invalidated_decisions("testproj")
+        assert obj in result
+
+    def test_excludes_current_decisions(self, backend):
+        backend.ingest(_session(
+            notes="We decided to use PostgreSQL. We decided to use Redis.",
+        ))
+        triples = backend.query_entity("testproj")
+        # Invalidate only the first one
+        backend.invalidate_triple("testproj", "decided", triples[0]["object"])
+        result = backend.get_invalidated_decisions("testproj")
+        # The non-invalidated one should not be in the set
+        current = [t for t in backend.query_entity("testproj") if t["current"]]
+        for t in current:
+            assert t["object"] not in result
+
+    def test_with_kg_none(self, backend):
+        backend._kg = None
+        result = backend.get_invalidated_decisions("testproj")
+        assert result == set()

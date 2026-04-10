@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import time
 from collections import OrderedDict
 from dataclasses import asdict
@@ -17,7 +18,10 @@ from pydantic import BaseModel
 
 from rawgentic_memory.models import IngestResult, SessionData, WakeupContext
 
+logger = logging.getLogger(__name__)
+
 _INGEST_OFFSET_MAX_ENTRIES = 512
+_KG_HISTORICAL_DEMOTION = 0.5
 
 # Endpoints excluded from idle timeout tracking — monitoring calls
 # should not keep the server alive.
@@ -44,6 +48,12 @@ class SearchRequest(BaseModel):
 
 class ReindexRequest(BaseModel):
     source_dirs: list[str]
+
+
+class InvalidateRequest(BaseModel):
+    subject: str
+    predicate: str
+    object: str
 
 
 def create_app(
@@ -173,6 +183,24 @@ def create_app(
             memory_type=req.memory_type,
             limit=req.limit,
         )
+
+        # AC5: Demote invalidated decisions in search results
+        if results and hasattr(app.state.backend, "get_invalidated_decisions"):
+            # Collect unique projects from decision-type results
+            projects = {r.project for r in results if r.memory_type == "decision"}
+            invalidated: set[str] = set()
+            for proj in projects:
+                try:
+                    invalidated |= app.state.backend.get_invalidated_decisions(proj)
+                except Exception:
+                    logger.warning("KG demotion lookup failed for %s", proj, exc_info=True)
+            # Apply demotion and re-sort
+            if invalidated:
+                for r in results:
+                    if r.memory_type == "decision" and r.content in invalidated:
+                        r.similarity = round(r.similarity * _KG_HISTORICAL_DEMOTION, 4)
+                results.sort(key=lambda r: r.similarity, reverse=True)
+
         return JSONResponse({"results": [asdict(r) for r in results]})
 
     @app.post("/reindex")
@@ -195,6 +223,45 @@ def create_app(
         else:
             ctx = WakeupContext(text="", tokens=0, layers=[], backend="mempalace")
         return JSONResponse(asdict(ctx))
+
+    # --- Knowledge Graph endpoints ---
+
+    @app.post("/kg/invalidate")
+    async def kg_invalidate(req: InvalidateRequest):
+        if app.state.backend is None:
+            return JSONResponse(
+                {"error": "No backend available"},
+                status_code=503,
+            )
+        result = app.state.backend.invalidate_triple(
+            subject=req.subject,
+            predicate=req.predicate,
+            obj=req.object,
+        )
+        return JSONResponse(result)
+
+    @app.get("/kg/entity")
+    async def kg_entity(
+        name: str = Query(...),
+        as_of: str | None = Query(default=None),
+    ):
+        if app.state.backend is None:
+            return JSONResponse(
+                {"error": "No backend available"},
+                status_code=503,
+            )
+        triples = app.state.backend.query_entity(name, as_of=as_of)
+        return JSONResponse({"triples": triples})
+
+    @app.get("/kg/timeline")
+    async def kg_timeline(entity: str = Query(...)):
+        if app.state.backend is None:
+            return JSONResponse(
+                {"error": "No backend available"},
+                status_code=503,
+            )
+        timeline = app.state.backend.get_timeline(entity)
+        return JSONResponse({"timeline": timeline})
 
     return app
 

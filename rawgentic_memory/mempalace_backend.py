@@ -32,11 +32,14 @@ try:
     from mempalace.miner import get_collection
     from mempalace.layers import MemoryStack
     from mempalace.config import DEFAULT_PALACE_PATH
+    from mempalace.knowledge_graph import KnowledgeGraph
 
     MEMPALACE_AVAILABLE = True
 except ImportError:
     MEMPALACE_AVAILABLE = False
     DEFAULT_PALACE_PATH = None
+
+_KG_DECISION_PREDICATE = "decided"
 
 
 def _drawer_id(wing: str, room: str, source_file: str, chunk_index: int) -> str:
@@ -56,6 +59,14 @@ class MemPalaceBackend:
         self._collection = get_collection(self._palace_path)
         self._available = True
         self._last_ingest: str | None = None
+
+        # KG co-located with palace — graceful degradation if init fails
+        self._kg = None
+        try:
+            kg_path = str(Path(self._palace_path).parent / "knowledge_graph.sqlite3")
+            self._kg = KnowledgeGraph(db_path=kg_path)
+        except Exception:
+            logger.warning("KG initialization failed, KG features disabled", exc_info=True)
 
     def ingest(self, session_data: SessionData) -> IngestResult:
         """Enrich session data and store via MemPalace palace structure."""
@@ -102,6 +113,20 @@ class MemPalaceBackend:
 
         self._collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
         self._last_ingest = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+        # KG side-channel: create triples for decision-type segments
+        if self._kg is not None:
+            for seg in segments:
+                if seg.memory_type == "decision":
+                    try:
+                        self._kg.add_triple(
+                            subject=session_data.project,
+                            predicate=_KG_DECISION_PREDICATE,
+                            obj=seg.content,
+                            valid_from=session_data.timestamp,
+                        )
+                    except Exception:
+                        logger.warning("KG triple creation failed", exc_info=True)
 
         return IngestResult(indexed=len(ids), skipped=0, errors=0)
 
@@ -192,6 +217,60 @@ class MemPalaceBackend:
                 "metadata": result["metadatas"][i],
             })
         return docs
+
+    def query_entity(self, name: str, as_of: str | None = None) -> list[dict]:
+        """Query KG for all triples involving an entity."""
+        if self._kg is None:
+            return []
+        try:
+            return self._kg.query_entity(name, as_of=as_of, direction="outgoing")
+        except Exception:
+            logger.warning("KG query_entity failed for %s", name, exc_info=True)
+            return []
+
+    def invalidate_triple(self, subject: str, predicate: str, obj: str) -> dict:
+        """Invalidate a KG triple and return confirmation with found status."""
+        result = {"subject": subject, "predicate": predicate, "object": obj, "found": False}
+        if self._kg is None:
+            return result
+        try:
+            # Check existence before invalidating (kg.invalidate returns None)
+            existing = self._kg.query_entity(subject, direction="outgoing")
+            pred_normalized = predicate.lower().replace(" ", "_")
+            found = any(
+                t["predicate"] == pred_normalized and t["object"] == obj and t["current"]
+                for t in existing
+            )
+            if found:
+                self._kg.invalidate(subject, pred_normalized, obj)
+                result["found"] = True
+        except Exception:
+            logger.warning("KG invalidate failed", exc_info=True)
+        return result
+
+    def get_timeline(self, entity: str) -> list[dict]:
+        """Get chronological timeline of all facts for an entity."""
+        if self._kg is None:
+            return []
+        try:
+            return self._kg.timeline(entity_name=entity)
+        except Exception:
+            logger.warning("KG timeline failed for %s", entity, exc_info=True)
+            return []
+
+    def get_invalidated_decisions(self, project: str) -> set[str]:
+        """Return content strings of invalidated decision triples for a project."""
+        if self._kg is None:
+            return set()
+        try:
+            triples = self._kg.query_entity(project, direction="outgoing")
+            return {
+                t["object"] for t in triples
+                if t["predicate"] == _KG_DECISION_PREDICATE and not t["current"]
+            }
+        except Exception:
+            logger.warning("KG get_invalidated_decisions failed for %s", project, exc_info=True)
+            return set()
 
     def stats(self) -> BackendStats:
         """Return backend status and document counts."""
