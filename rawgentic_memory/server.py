@@ -180,6 +180,24 @@ def create_app(
             memory_type=req.memory_type,
             limit=req.limit,
         )
+
+        # AC5: Demote invalidated decisions in search results
+        if results and hasattr(app.state.backend, "get_invalidated_decisions"):
+            # Collect unique projects from decision-type results
+            projects = {r.project for r in results if r.memory_type == "decision"}
+            invalidated: set[str] = set()
+            for proj in projects:
+                try:
+                    invalidated |= app.state.backend.get_invalidated_decisions(proj)
+                except Exception:
+                    pass  # Degrade gracefully — skip demotion if KG fails
+            # Apply demotion and re-sort
+            if invalidated:
+                for r in results:
+                    if r.memory_type == "decision" and r.content in invalidated:
+                        r.similarity = round(r.similarity * _KG_HISTORICAL_DEMOTION, 4)
+                results.sort(key=lambda r: r.similarity, reverse=True)
+
         return JSONResponse({"results": [asdict(r) for r in results]})
 
     @app.post("/reindex")
