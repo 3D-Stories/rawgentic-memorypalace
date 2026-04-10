@@ -1,5 +1,13 @@
 # rawgentic-memorypalace -- Project Instructions
 
+## Memory Server Configuration
+
+```
+MEMORY_SERVER_URL=http://127.0.0.1:8420
+```
+
+All skills and hooks use this URL to reach the memory server. To override (e.g., remote server), change the URL above or add a `Memory Server Configuration` section with the correct URL to your project's CLAUDE.md.
+
 ## Git Workflow
 
 - **Never push directly to `main`.** All changes must go through a pull request.
