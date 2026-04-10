@@ -228,6 +228,50 @@ class MemPalaceBackend:
             logger.warning("KG query_entity failed for %s", name, exc_info=True)
             return []
 
+    def invalidate_triple(self, subject: str, predicate: str, obj: str) -> dict:
+        """Invalidate a KG triple and return confirmation with found status."""
+        result = {"subject": subject, "predicate": predicate, "object": obj, "found": False}
+        if self._kg is None:
+            return result
+        try:
+            # Check existence before invalidating (kg.invalidate returns None)
+            existing = self._kg.query_entity(subject, direction="outgoing")
+            pred_normalized = predicate.lower().replace(" ", "_")
+            found = any(
+                t["predicate"] == pred_normalized and t["object"] == obj and t["current"]
+                for t in existing
+            )
+            if found:
+                self._kg.invalidate(subject, predicate, obj)
+                result["found"] = True
+        except Exception:
+            logger.warning("KG invalidate failed", exc_info=True)
+        return result
+
+    def get_timeline(self, entity: str) -> list[dict]:
+        """Get chronological timeline of all facts for an entity."""
+        if self._kg is None:
+            return []
+        try:
+            return self._kg.timeline(entity_name=entity)
+        except Exception:
+            logger.warning("KG timeline failed for %s", entity, exc_info=True)
+            return []
+
+    def get_invalidated_decisions(self, project: str) -> set[str]:
+        """Return content strings of invalidated decision triples for a project."""
+        if self._kg is None:
+            return set()
+        try:
+            triples = self._kg.query_entity(project, direction="outgoing")
+            return {
+                t["object"] for t in triples
+                if t["predicate"] == _KG_DECISION_PREDICATE and not t["current"]
+            }
+        except Exception:
+            logger.warning("KG get_invalidated_decisions failed for %s", project, exc_info=True)
+            return set()
+
     def stats(self) -> BackendStats:
         """Return backend status and document counts."""
         try:
