@@ -1,13 +1,12 @@
-# Combined memory server + web frontends deployment.
+# Memory server + web frontend deployment.
 #
 # Usage:
 #   cd deploy
 #   docker compose up -d --build
 #
 # Services:
-#   memory-server:       FastAPI memory server (port 8420)
-#   native-frontend:     Web UI for native ChromaDB (port 8098)
-#   mempalace-frontend:  Web UI for MemPalace data (port 8099)
+#   memory-server:  FastAPI memory server (port 8420)
+#   web-frontend:   Web UI for browsing palace data (port 8099)
 #
 # All hosts can reach the server at http://<this-host>:8420
 # Set MEMORY_SERVER_URL=http://10.0.17.205:8420 on remote machines.
@@ -31,28 +30,10 @@ services:
       timeout: 5s
       retries: 3
 
-  native-frontend:
+  web-frontend:
     image: memory-palace-web-frontend:latest
     build: https://github.com/tomsalphaclawbot/memory-palace-web-frontend.git
-    container_name: rawgentic-native-frontend
-    restart: unless-stopped
-    ports:
-      - "8098:8099"
-    volumes:
-      - palace-data:/app/palace:ro
-    depends_on:
-      memory-server:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/healthz', timeout=5)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-  mempalace-frontend:
-    image: memory-palace-web-frontend:latest
-    build: https://github.com/tomsalphaclawbot/memory-palace-web-frontend.git
-    container_name: rawgentic-mempalace-frontend
+    container_name: rawgentic-web-frontend
     restart: unless-stopped
     ports:
       - "8099:8099"
