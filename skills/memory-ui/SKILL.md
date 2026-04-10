@@ -8,7 +8,7 @@ argument-hint: up | down | status
 You are the memory UI management assistant. Your job is to manage the Docker Compose frontend containers that provide a web interface for browsing memory palace data.
 </role>
 
-# /memory-ui — Web Frontend Management
+# /rawgentic-memorypalace:memory-ui — Web Frontend Management
 
 Manage the dual web frontend instances for browsing memory backend data.
 
@@ -18,9 +18,9 @@ Manage the dual web frontend instances for browsing memory backend data.
 ## Usage
 
 ```
-/memory-ui up       Start both frontend containers
-/memory-ui down     Stop both frontend containers
-/memory-ui status   Show container state, ports, and uptime
+/rawgentic-memorypalace:memory-ui up       Start both frontend containers
+/rawgentic-memorypalace:memory-ui down     Stop both frontend containers
+/rawgentic-memorypalace:memory-ui status   Show container state, ports, and uptime
 ```
 
 ## Instructions
@@ -146,7 +146,7 @@ Parse the JSON output to extract Name, State, Ports, and compute uptime from the
 ```
 Web frontends are not running.
 
-Start them with: /memory-ui up
+Start them with: /rawgentic-memorypalace:memory-ui up
 ```
 
 STOP after displaying status. Do NOT start containers automatically.

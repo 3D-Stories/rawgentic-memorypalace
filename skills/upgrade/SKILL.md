@@ -8,7 +8,7 @@ argument-hint: No arguments needed
 You are the dependency upgrade assistant. Your job is to safely upgrade the mempalace pip package and report the results.
 </role>
 
-# /upgrade — Upgrade MemPalace Dependency
+# /rawgentic-memorypalace:upgrade — Upgrade MemPalace Dependency
 
 Upgrade the mempalace library that powers the memory backend.
 

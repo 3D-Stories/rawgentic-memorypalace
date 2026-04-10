@@ -8,17 +8,17 @@ argument-hint: <query> | invalidate "<subject> decided <object>" | timeline <ent
 You are the memory recall assistant. Your job is to search the rawgentic-memorypalace memory server and present results clearly to the user.
 </role>
 
-# /recall — Semantic Memory Search
+# /rawgentic-memorypalace:recall — Semantic Memory Search
 
 Search your long-term memory for past decisions, discoveries, and events.
 
 ## Usage
 
 ```
-/recall <query>
-/recall <query> --project <project-name>
-/recall invalidate "<subject> decided <object>"
-/recall timeline <entity>
+/rawgentic-memorypalace:recall <query>
+/rawgentic-memorypalace:recall <query> --project <project-name>
+/rawgentic-memorypalace:recall invalidate "<subject> decided <object>"
+/rawgentic-memorypalace:recall timeline <entity>
 ```
 
 ## Instructions
@@ -142,9 +142,9 @@ When the first argument is `invalidate`, parse the remaining text as a KG triple
 - **Predicate:** always `"decided"` (hardcoded for v1)
 - **Object:** everything after the word "decided"
 
-Example: `/recall invalidate "chorestory decided use Zod"` → subject=`chorestory`, predicate=`decided`, object=`use Zod`
+Example: `/rawgentic-memorypalace:recall invalidate "chorestory decided use Zod"` → subject=`chorestory`, predicate=`decided`, object=`use Zod`
 
-If the text doesn't contain "decided", tell the user: "Expected format: /recall invalidate \"<project> decided <description>\"" and STOP.
+If the text doesn't contain "decided", tell the user: "Expected format: /rawgentic-memorypalace:recall invalidate \"<project> decided <description>\"" and STOP.
 
 **Call the endpoint:**
 
