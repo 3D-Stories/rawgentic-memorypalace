@@ -7,7 +7,7 @@ license = "MIT"
 dependencies = [
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
-    "mempalace>=3.0.0,<4.0",
+    "mempalace>=3.3.0,<4.0",
 ]
 
 [project.optional-dependencies]
