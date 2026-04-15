@@ -36,5 +36,13 @@
     "format": "markdown"
   },
   "protectionLevel": "sandbox",
-  "custom": {}
+  "custom": {
+    "publishStrategy": {
+      "publicRepo": "3D-Stories/rawgentic-memorypalace",
+      "privateMirror": "STARSAirAmbulance/rawgentic-memorypalace-private",
+      "privateMirrorPat": "~/.secrets/github_pat_stars",
+      "syncMethod": "git remote dual-push on origin",
+      "note": "Public repo is community-facing canonical. Private mirror lives in STARSAirAmbulance org because that's where the Claude org plugin marketplace installs from. Both stay in sync via dual-push configured in .git/config. The STARS PAT is required to push to the private mirror; the 3D-Stories PAT (~/.secrets/github-pat) is required for the public repo. Per-URL credential helpers in .git/config route the right PAT to the right URL."
+    }
+  }
 }
