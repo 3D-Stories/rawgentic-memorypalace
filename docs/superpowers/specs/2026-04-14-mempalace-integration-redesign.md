@@ -1,8 +1,15 @@
 # MemPalace Integration Redesign
 
 **Date:** 2026-04-14
-**Status:** Design — Pending Implementation
+**Status:** Design — Pending Implementation (Revision 2 after BMAD party-mode review)
 **Author:** Brainstorm session with Claude
+
+## Revision History
+
+| Date | Change | Reason |
+|---|---|---|
+| 2026-04-14 (r1) | Initial design | Brainstorm session output |
+| 2026-04-14 (r2) | Reinstate HTTP server as single-process gatekeeper; reorder phases for atomic cutover; pipe JSON to stdin (no shell expansion); add behavioral contract; add canary test; throttle PostToolUse | BMAD party-mode review (Winston, Amelia, Murat, Dr. Quinn) verified ChromaDB multi-process unsafe + cold-start latency 7-10x worse than estimated |
 
 ## Goal
 
@@ -28,6 +35,20 @@ The current rawgentic-memorypalace integration has three critical flaws:
 
 ## Architecture
 
+### Critical Constraint: Single-Process ChromaDB Access
+
+**Multi-process ChromaDB access is fundamentally unsafe.** Verified via source code analysis:
+- ChromaDB uses DELETE journal mode, not WAL — readers blocked by writers
+- HNSW index binary files have NO file locking — concurrent writes corrupt the index
+- Index metadata serialization has no atomic write — concurrent writes produce corruption
+- ChromaDB's internal `ReadWriteLock` is `threading.Condition` (intra-process only)
+- Mempalace's claimed "file-level locking" is actually idempotent ID hashing (deduplication, not concurrency control)
+- ChromaDB's official guidance: `PersistentClient` "not recommended for production use"; `HttpClient` is recommended
+
+**This invalidates the original "no HTTP server" design.** The bridge MUST run as a single long-lived gatekeeper process that owns the ChromaDB client. Hooks communicate with it via HTTP (curl).
+
+This also solves the cold-start latency problem (measured at ~3 seconds per cold subprocess vs ~100ms for warm HTTP curl).
+
 ### Three-Plugin Split
 
 ```
@@ -39,31 +60,49 @@ The current rawgentic-memorypalace integration has three critical flaws:
 │  │   (plugin)    │   │  (MCP server +   │   │ memorypalace       │   │
 │  │              │   │   native hooks)  │   │ (bridge plugin)    │   │
 │  │              │   │                  │   │                    │   │
-│  │ Workflows    │   │ 19+ MCP tools    │   │ Hooks:             │   │
+│  │ Workflows    │   │ 19+ MCP tools    │   │ Hooks (curl HTTP): │   │
 │  │ WAL/Guards   │   │ session-start    │   │  SessionStart      │   │
 │  │ Sessions     │   │ stop (every 15)  │   │  UserPromptSubmit  │   │
 │  │              │   │ precompact       │   │  PostToolUse       │   │
 │  │              │   │ Background mining│   │                    │   │
-│  │              │   │ BM25+Closets     │   │ Adapter (v3):      │   │
-│  │              │   │ Layers (L0-L3)   │   │  search()          │   │
-│  │              │   │ Halls/KG/Tunnels │   │  wakeup()          │   │
-│  │              │   │ Multi-agent safe │   │  fact_check()      │   │
-│  │              │   │ AAAK closets     │   │  health()          │   │
+│  │              │   │ BM25+Closets     │   │ HTTP server (~80 LOC) │
+│  │              │   │ Layers (L0-L3)   │   │  GET  /healthz     │   │
+│  │              │   │ Halls/KG/Tunnels │   │  POST /search      │   │
+│  │              │   │ AAAK closets     │   │  GET  /wakeup      │   │
+│  │              │   │                  │   │  POST /fact_check  │   │
+│  │              │   │                  │   │                    │   │
+│  │              │   │                  │   │ Adapter (v3):      │   │
+│  │              │   │                  │   │  search/wakeup/    │   │
+│  │              │   │                  │   │  fact_check/health │   │
 │  └──────────────┘   └──────────────────┘   └────────────────────┘   │
-│         │                    ▲                      │                  │
 │         │                    │                      │                  │
-│         │           Direct Python API               │                  │
-│         │           (in-process, no HTTP)           │                  │
+│         │              MCP (Claude)                 │                  │
 │         │                    │                      │                  │
-│         └── no dependency ───┴──── adapter ─────────┘                  │
-│                                                                       │
-│                              ┌───────────────────┐                    │
-│                              │  Palace Storage    │                    │
-│                              │  ~/.mempalace/     │                    │
-│                              │  ChromaDB+SQLite   │                    │
-│                              │  Owned by mempalace│                    │
-│                              └───────────────────┘                    │
+│         │                    └─── stdio ────────────┤                  │
+│         │                                           │                  │
+│         │                                  ChromaDB Python API         │
+│         │                                  (in-process, single client) │
+│         │                                           │                  │
+│         └── no dependency ────────────────── adapter│                  │
+│                                                     ▼                  │
+│                              ┌───────────────────────┐                 │
+│                              │  Palace Storage       │ ◄── single      │
+│                              │  ~/.mempalace/        │     writer at   │
+│                              │  ChromaDB+SQLite      │     a time      │
+│                              │  Owned by mempalace   │                 │
+│                              └───────────────────────┘                 │
 └─────────────────────────────────────────────────────────────────────┘
+
+Process boundaries:
+  P1: Claude Code session (the user)
+  P2: mempalace MCP server (stdio, started by Claude Code)
+  P3: rawgentic-memorypalace HTTP server (long-lived, lazy-start by hook)
+  P4: mempalace mine (transient, optional via MEMPAL_DIR)
+
+Concurrency strategy: P3 is READ-ONLY (search, wakeup, fact_check).
+P2 owns ALL WRITES via Save Hook MCP tools. P4 runs only when no
+session active. This serializes writes through a single process while
+allowing the bridge to read concurrently.
 ```
 
 ### Independence Matrix
@@ -92,6 +131,21 @@ class MempalaceAdapter:
     MIN_VERSION = "3.3.0"      # closets, BM25, Background Everything
     MAX_VERSION = "4.0.0"      # exclusive upper bound
 
+    # Behavioral contract — verified at startup, not just API signatures
+    BEHAVIORAL_CONTRACT = {
+        "expected_mcp_tools": [
+            "mempalace_search",
+            "mempalace_add_drawer",
+            "mempalace_diary_write",
+            "mempalace_kg_query",
+            "mempalace_kg_add",
+            "mempalace_kg_invalidate",
+        ],
+        "expected_save_interval": 15,           # mempal_save_hook.sh default
+        "expected_palace_dir": "~/.mempalace/palace",
+        "expected_kg_path": "~/.mempalace/knowledge_graph.sqlite3",
+    }
+
     def search(
         query: str,
         project: str | None = None,
@@ -109,6 +163,10 @@ class MempalaceAdapter:
     ) -> list[FactIssue]
 
     def health() -> HealthStatus
+
+    def verify_behavioral_contract() -> list[ContractViolation]
+        """Probe mempalace at startup; report missing tools or
+           changed defaults. Logged as warnings, not blocking."""
 ```
 
 ### Return Types
@@ -228,16 +286,17 @@ class MempalaceAdapter:
 |---|---|---|
 | `rawgentic_memory/enrichment.py` | ~150 | Replaced by mempalace's general_extractor (110 patterns vs our 5) and Save Hook AI classification |
 | `rawgentic_memory/mempalace_backend.py` | ~200 | mempalace manages its own storage |
-| `rawgentic_memory/server.py` | ~300 | No HTTP server needed — direct Python calls from hooks |
-| Server `/ingest` endpoint | (in server.py) | mempalace Save Hook handles it |
-| Server `/reindex` endpoint | (in server.py) | mempalace CLI handles it |
-| Server `/kg/*` endpoints | (in server.py) | mempalace MCP tools handle it |
+| `rawgentic_memory/server.py` ingest path | ~120 | `/ingest` deleted; server slimmed to ~80 lines for /search /wakeup /fact_check /healthz |
+| Server `/ingest` endpoint | ~40 | mempalace Save Hook handles it |
+| Server `/reindex` endpoint | ~30 | mempalace CLI handles it |
+| Server `/kg/*` endpoints | ~60 | mempalace MCP tools handle it |
+| `rawgentic_memory/models.py` | ~80 | Types moved into adapter.py |
 | `hooks/stop` (ingest portion) | ~30 | Replaced by mempalace's stop hook |
 | `hooks/user-prompt-submit` (timer ingest) | ~40 | Replaced by mempalace's stop hook |
 | `hooks/session-start` (PreCompact ingest) | ~20 | Replaced by mempalace's precompact hook |
 | `rawgentic/hooks/notes-size-handler.py` ingest call | ~15 | mempalace handles it |
 
-**Total deleted: ~755 lines.**
+**Total deleted: ~755 lines.** The HTTP server is **kept** (slimmed from ~500 to ~80 lines) because multi-process ChromaDB access is unsafe — the server is the single-process gatekeeper.
 
 ### What Replaces It
 
@@ -325,7 +384,7 @@ Smart gate: should_search()?
               Inject as additionalContext
 ```
 
-Latency: ~200-400ms for cold Python subprocess, ~100ms warm (OS cache).
+Latency: ~100ms via warm HTTP server (curl). Cold Python subprocess approach was rejected after measurement showed ~3s cold start + multi-process ChromaDB unsafe (see Critical Constraint above).
 Token cost: 0 for the hook itself. ~200-400 tokens for injected context when relevant.
 
 ### Layer 3: Proactive (Probabilistic, mid-reasoning)
@@ -349,7 +408,7 @@ Reliability multipliers:
 3. Workflow skills (brainstorming, implement-feature, fix-bug, refactor) bake in memory-aware steps
 4. Layer 1 + Layer 2 prime the pump — Claude sees memory exists and is useful
 
-### Layer 4: Fact-Checking (Guaranteed, on writes)
+### Layer 4: Fact-Checking (Guaranteed-with-throttle, on writes)
 
 ```
 Claude calls Edit or Write tool
@@ -358,20 +417,29 @@ Claude calls Edit or Write tool
 PostToolUse hook fires
     │
     ▼
-should_check_tool() → only Edit/Write
+should_check_tool() → only Edit|Write|MultiEdit
     │
     ▼
-adapter.fact_check(content_being_written)
-    │
-    ▼
+Throttle gate:
+  ├── < 30s since last fact_check for this session → skip
+  ├── already checked this exact file path this session → skip
+  │
+  └── pass through
+        │
+        ▼
+HTTP POST /fact_check with content
+        │
+        ▼
 Returns list[FactIssue]:
   - similar_name: typo of registered entity
   - relationship_mismatch: contradicts KG
   - stale_fact: KG marked closed in past
-    │
-    ▼
+        │
+        ▼
 If issues found, inject corrections as additionalContext for next turn
 ```
+
+Throttling rationale: a refactoring session touching 30 files would otherwise spawn 30 fact-check requests. Even via warm HTTP (~100ms each), cumulative latency = 3s of friction. Throttle bounds this.
 
 Catches contradictions at the boundary where bad code becomes real damage.
 
@@ -409,87 +477,158 @@ Catches contradictions at the boundary where bad code becomes real damage.
 }
 ```
 
-### hooks/session-start (NEW, ~30 lines)
+### Hook Communication Pattern
+
+**All hooks pipe stdin JSON directly to the HTTP server** — never shell-expand user input. This eliminates shell quoting injection (user prompts containing `"`, `` ` ``, `$(...)`, or newlines cannot become commands).
+
+The HTTP server parses the JSON, extracts what it needs, and returns response JSON for the hook to emit.
+
+### hooks/session-start (NEW, ~25 lines)
 
 ```bash
 #!/bin/bash
 # SessionStart — wakeup context injection (Layer 0 + Layer 1)
 source "$(dirname "$0")/lib.sh"
-read_hook_input
 
+ensure_server_running || exit 0
 PROJECT=$(resolve_project)
-CONTEXT=$(call_adapter wakeup "$PROJECT")
-[[ -z "$CONTEXT" ]] && exit 0
 
-echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":$CONTEXT}}"
+# GET /wakeup?project=<project> — server reads palace, returns L0+L1
+RESPONSE=$(curl -sS --max-time 8 "http://127.0.0.1:8420/wakeup?project=$(jq -rn --arg p "$PROJECT" '$p|@uri')" 2>/dev/null)
+[[ -z "$RESPONSE" ]] && exit 0
+
+# Server returns: {"text": "...", "tokens": N}
+TEXT=$(echo "$RESPONSE" | jq -r '.text // empty')
+[[ -z "$TEXT" ]] && exit 0
+
+# Build hookSpecificOutput. Use jq to safely encode text as JSON string.
+echo "$RESPONSE" | jq '{
+  hookSpecificOutput: {
+    hookEventName: "SessionStart",
+    additionalContext: .text
+  }
+}'
 exit 0
 ```
 
-### hooks/user-prompt-submit (NEW, ~40 lines)
+### hooks/user-prompt-submit (NEW, ~35 lines)
 
 ```bash
 #!/bin/bash
 # UserPromptSubmit — smart-gated auto-recall (Layer 2)
+# Pipes stdin JSON directly to server — NO shell expansion of user input.
 source "$(dirname "$0")/lib.sh"
-read_hook_input
 
+# Cache stdin to a variable for both gating and forwarding
+HOOK_INPUT=$(cat)
 PROMPT=$(echo "$HOOK_INPUT" | jq -r '.prompt // empty')
 PROJECT=$(resolve_project)
 
+# Smart gate (length, slash, confirmation patterns, debounce)
 should_search "$PROMPT" "$PROJECT" || exit 0
 
-RESULTS=$(call_adapter search "$PROMPT" "$PROJECT" 3)
-[[ -z "$RESULTS" ]] && exit 0
+ensure_server_running || exit 0
 
-# Filter by similarity threshold
-RELEVANT=$(echo "$RESULTS" | jq '[.[] | select(.similarity > 0.5)]')
-[[ "$(echo "$RELEVANT" | jq 'length')" -eq 0 ]] && exit 0
+# POST /search with full hook input as body. Server extracts prompt,
+# searches mempalace, filters by similarity > 0.5, returns:
+#   {"additionalContext": "..."}  if hits found
+#   {}                             if no hits
+RESPONSE=$(echo "$HOOK_INPUT" | curl -sS --max-time 4 \
+    -H "Content-Type: application/json" \
+    --data-binary @- \
+    "http://127.0.0.1:8420/search?project=$(jq -rn --arg p "$PROJECT" '$p|@uri')&min_similarity=0.5&limit=3" 2>/dev/null)
 
-CONTEXT=$(format_memory_context "$RELEVANT")
+[[ -z "$RESPONSE" ]] && exit 0
+CONTEXT=$(echo "$RESPONSE" | jq -r '.additionalContext // empty')
+[[ -z "$CONTEXT" ]] && exit 0
+
 date +%s > "$STATE_DIR/last-recall-ts-$PROJECT"
 
-echo "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":$CONTEXT}}"
+echo "$RESPONSE" | jq '{
+  hookSpecificOutput: {
+    hookEventName: "UserPromptSubmit",
+    additionalContext: .additionalContext
+  }
+}'
 exit 0
 ```
 
-### hooks/post-tool-use (NEW, ~30 lines)
+### hooks/post-tool-use (NEW, ~35 lines)
 
 ```bash
 #!/bin/bash
 # PostToolUse — fact-checking on writes (Layer 4)
+# Throttled to bound cumulative latency in refactoring sessions.
 source "$(dirname "$0")/lib.sh"
-read_hook_input
 
+HOOK_INPUT=$(cat)
 TOOL=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty')
-should_check_tool "$TOOL" || exit 0
+[[ "$TOOL" =~ ^(Edit|Write|MultiEdit)$ ]] || exit 0
 
-CONTENT=$(extract_write_content "$HOOK_INPUT")
-[[ -z "$CONTENT" ]] && exit 0
+# Throttle: 30s window + per-file-path dedup within session
+FILE_PATH=$(echo "$HOOK_INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty')
+should_fact_check "$FILE_PATH" || exit 0
 
-ISSUES=$(call_adapter fact_check "$CONTENT")
-[[ -z "$ISSUES" ]] && exit 0
+ensure_server_running || exit 0
 
-[[ "$(echo "$ISSUES" | jq 'length')" -eq 0 ]] && exit 0
+# POST /fact_check with full hook input as body. Server extracts content,
+# runs fact_checker, returns:
+#   {"additionalContext": "..."}  if issues found
+#   {}                             if clean
+RESPONSE=$(echo "$HOOK_INPUT" | curl -sS --max-time 4 \
+    -H "Content-Type: application/json" \
+    --data-binary @- \
+    "http://127.0.0.1:8420/fact_check" 2>/dev/null)
 
-CONTEXT=$(format_fact_issues "$ISSUES")
-echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":$CONTEXT}}"
+[[ -z "$RESPONSE" ]] && exit 0
+CONTEXT=$(echo "$RESPONSE" | jq -r '.additionalContext // empty')
+[[ -z "$CONTEXT" ]] && exit 0
+
+date +%s > "$STATE_DIR/last-fact-check-ts"
+echo "$FILE_PATH" >> "$STATE_DIR/fact-check-paths-$(date +%s | head -c 5)"
+
+echo "$RESPONSE" | jq '{
+  hookSpecificOutput: {
+    hookEventName: "PostToolUse",
+    additionalContext: .additionalContext
+  }
+}'
 exit 0
 ```
 
-### hooks/lib.sh (REWRITE, ~80 lines)
+### hooks/lib.sh (~100 lines)
 
 Key functions:
 
 ```bash
-call_adapter() {
-    # Invoke Python adapter via subprocess
-    # Args: method [args...]
-    # Returns: JSON output or empty
-    "$PLUGIN_VENV/bin/python3" -m rawgentic_memory.adapter "$@" 2>/dev/null
+# Lazy-start the HTTP server if not running. Idempotent.
+ensure_server_running() {
+    local url="${MEMORY_SERVER_URL:-http://127.0.0.1:8420}"
+    if curl -sS --max-time 1 "$url/healthz" >/dev/null 2>&1; then
+        return 0
+    fi
+    [[ "${MEMORY_NO_AUTOSTART:-0}" == "1" ]] && return 1
+
+    local port=$(echo "$url" | sed -E 's|.*:([0-9]+).*|\1|')
+    local lockfile="/tmp/memorypalace-start.lock"
+    (
+        flock -n 9 || exit 0
+        "$PLUGIN_VENV/bin/python3" -m rawgentic_memory.server \
+            --port "$port" --timeout 14400 \
+            >> /tmp/memorypalace-server.log 2>&1 &
+        disown
+    ) 9>"$lockfile"
+
+    # Poll healthz for up to 10 seconds
+    for i in $(seq 1 20); do
+        sleep 0.5
+        curl -sS --max-time 1 "$url/healthz" >/dev/null 2>&1 && return 0
+    done
+    return 1
 }
 
+# Smart gate for UserPromptSubmit. Operates on $PROMPT, never shell-expands it.
 should_search() {
-    # Smart gate for UserPromptSubmit
     local prompt="$1" project="$2"
     [[ ${#prompt} -lt 20 ]] && return 1
     [[ "$prompt" == /* ]] && return 1
@@ -500,24 +639,37 @@ should_search() {
     return 0
 }
 
-should_check_tool() {
-    local tool="$1"
-    [[ "$tool" =~ ^(Edit|Write|MultiEdit)$ ]]
+# Throttle gate for PostToolUse fact-check.
+# 30s window + per-file-path dedup within session.
+should_fact_check() {
+    local file_path="$1"
+    local now=$(date +%s)
+    local last=$(cat "$STATE_DIR/last-fact-check-ts" 2>/dev/null || echo 0)
+    [[ $((now - last)) -lt 30 ]] && return 1
+
+    # Per-file dedup — never fact-check the same file twice in a session
+    local session_paths_file="$STATE_DIR/fact-check-paths-$CLAUDE_SESSION_ID"
+    if [[ -f "$session_paths_file" ]] && grep -Fxq "$file_path" "$session_paths_file" 2>/dev/null; then
+        return 1
+    fi
+    return 0
 }
 
+# Read active rawgentic project from workspace + session registry.
 resolve_project() {
-    # Read active project from rawgentic workspace
-    jq -r '...' "$WORKSPACE_ROOT/.rawgentic_workspace.json"
-}
-
-format_memory_context() {
-    echo "$1" | jq -r '...'  # Citation-formatted output
-}
-
-format_fact_issues() {
-    echo "$1" | jq -r '...'  # Issue list with corrections
+    local registry="$WORKSPACE_ROOT/claude_docs/session_registry.jsonl"
+    if [[ -f "$registry" && -n "${CLAUDE_SESSION_ID:-}" ]]; then
+        local proj=$(grep -F "\"$CLAUDE_SESSION_ID\"" "$registry" 2>/dev/null \
+            | tail -1 | jq -r '.project // empty' 2>/dev/null)
+        [[ -n "$proj" ]] && { echo "$proj"; return; }
+    fi
+    # Fallback: most recently used active project
+    jq -r '[.projects[] | select(.active==true)] | sort_by(.lastUsed) | last | .name // empty' \
+        "$WORKSPACE_ROOT/.rawgentic_workspace.json" 2>/dev/null
 }
 ```
+
+**Critical security property:** Functions accept the prompt/path as `$1`. The hook scripts use `[[ ${#prompt} -lt 20 ]]` and pattern matching that does NOT eval the string. The prompt is never passed to a subshell or `eval`. The actual prompt content goes from stdin → curl `--data-binary @-` → server, never through a shell command line.
 
 ## Migration Path
 
@@ -576,85 +728,84 @@ mempalace search "EPYC server upgrade" --wing sysop
 
 **Validation:** Palace has retroactive depth — past context immediately accessible.
 
-### Phase 2: Install Mempalace Native Hooks (Day 1, ~10 min)
-
-Add to `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "Stop": [{
-      "matcher": "*",
-      "hooks": [{
-        "type": "command",
-        "command": "/path/to/mempalace/hooks/mempal_save_hook.sh",
-        "timeout": 30
-      }]
-    }],
-    "PreCompact": [{
-      "hooks": [{
-        "type": "command",
-        "command": "/path/to/mempalace/hooks/mempal_precompact_hook.sh",
-        "timeout": 30
-      }]
-    }]
-  }
-}
-```
-
-**Validation:** Run a session, verify save hook fires every 15 messages, Claude files via MCP tools.
-
-### Phase 3: Register Mempalace MCP Server (Day 1, ~5 min)
-
-```bash
-# Standard MCP registration
-claude mcp add mempalace -- python -m mempalace.mcp_server
-```
-
-**Validation:** Claude can call `mempalace_search`, `mempalace_kg_query`, etc.
-
-### Phase 4: Build Adapter Module (Day 2, ~4 hours)
+### Phase 2: Build Adapter Module (Day 2, ~4 hours) — REORDERED
 
 Create `rawgentic_memory/adapter.py`:
-- `MempalaceAdapter` class with versioning
+- `MempalaceAdapter` class with versioning + behavioral contract
 - All four methods (`search`, `wakeup`, `fact_check`, `health`)
+- `verify_behavioral_contract()` startup probe
 - Error handling — no exceptions leak
-- CLI entry point: `python -m rawgentic_memory.adapter <method> [args...]`
-- Unit tests against mempalace 3.3.0
+- Unit tests against mempalace 3.3.0 (see Test Coverage section)
 
-**Validation:** `python -m rawgentic_memory.adapter health` returns valid JSON.
+**Validation:** `python -m rawgentic_memory.adapter health` returns valid JSON; behavioral contract probe passes against installed mempalace.
 
-### Phase 5: Rewrite Hooks (Day 2, ~4 hours)
+### Phase 3: Trim HTTP Server (Day 2, ~3 hours) — REORDERED
 
-Replace existing hooks with new minimal versions:
+Reduce `rawgentic_memory/server.py` from ~500 lines to ~80:
+- Keep `GET /healthz`, `GET /wakeup`, `POST /search`, `POST /fact_check`
+- Remove `POST /ingest`, `POST /reindex`, `GET /kg/*`
+- All endpoints route through `adapter.py`
+- Lazy-start + idle shutdown unchanged
+- Server is READ-ONLY against ChromaDB (writes go through mempalace MCP)
 
-| Old Hook | Action | New Hook |
-|---|---|---|
-| `hooks/session-start` | Strip ingest, route through adapter | `hooks/session-start` (wakeup only) |
-| `hooks/user-prompt-submit` | Replace with auto-recall | `hooks/user-prompt-submit` (recall) |
-| `hooks/stop` | Delete | (mempalace native handles) |
-| `hooks/lib.sh` | Replace with adapter calls | `hooks/lib.sh` (smart_gate, format) |
-| (none) | Add | `hooks/post-tool-use` (fact-checking) |
+**Validation:** All four endpoints respond correctly. `/ingest` returns 410 Gone (deleted).
 
-**Validation:** Session works end-to-end — wakeup, auto-recall, fact-checking.
+### Phase 4: Build New Bridge Hooks (Day 2, ~3 hours) — REORDERED
 
-### Phase 6: Delete Server Infrastructure (Day 3, ~2 hours)
+Build (don't install yet):
+- `hooks/session-start` (~25 lines, curl /wakeup)
+- `hooks/user-prompt-submit` (~35 lines, smart-gate + curl /search)
+- `hooks/post-tool-use` (~35 lines, throttled + curl /fact_check)
+- `hooks/lib.sh` (~100 lines)
 
-Once hooks proven working with adapter:
+Test offline against running HTTP server. No production hook impact yet.
+
+**Validation:** All three new hooks emit valid JSON to stdout matching Claude hook protocol.
+
+### Phase 5: ATOMIC CUTOVER (Day 3, ~30 min) — REORDERED & UNIFIED
+
+This is a single atomic step. Do NOT execute partially.
 
 ```bash
-git rm rawgentic_memory/server.py
+# 1. Stop old HTTP server if running as systemd service
+systemctl --user stop rawgentic-memorypalace.service 2>/dev/null
+systemctl --user disable rawgentic-memorypalace.service 2>/dev/null
+# Or kill the process if managed differently
+pkill -f 'rawgentic_memory.server' || true
+
+# 2. Install new hooks atomically via single hooks.json update
+cp hooks/hooks.json.new hooks/hooks.json
+
+# 3. Install mempalace native hooks (~/.claude/settings.json)
+# (Manual edit or scripted)
+
+# 4. Register mempalace MCP server
+claude mcp add mempalace -- python -m mempalace.mcp_server
+
+# 5. Verify canary test passes (see Test Coverage section)
+.venv/bin/python -m rawgentic_memory.tests.canary
+```
+
+**Validation:** Canary test (write known fact → search → assert recall) passes within 60 seconds of cutover. All four bridge HTTP endpoints respond. mempalace MCP tools accessible to Claude.
+
+**Rollback:** Revert hooks/hooks.json from git, remove mempalace native hooks from `~/.claude/settings.json`, restart old systemd service. Total rollback time: < 2 minutes.
+
+### Phase 6: Delete Old Infrastructure (Day 3, ~1 hour)
+
+After Phase 5 verified successful and observed for at least one full session:
+
+```bash
 git rm rawgentic_memory/mempalace_backend.py
 git rm rawgentic_memory/enrichment.py
-git rm rawgentic_memory/models.py
-# Keep: __init__.py, adapter.py
+git rm rawgentic_memory/models.py  # most types move to adapter.py
+# Keep: __init__.py, adapter.py, server.py (slimmed in Phase 3)
 ```
 
 Update `pyproject.toml`:
-- Remove `fastapi`, `uvicorn` dependencies
+- Keep `fastapi`, `uvicorn` dependencies (server still needed)
 - Keep `mempalace>=3.3.0,<4.0`
 
-**Validation:** Plugin works without any HTTP server.
+**Validation:** Plugin still works after deletion. No imports of deleted modules anywhere.
 
 ### Phase 7: Update Skill Instructions (Day 3, ~2 hours)
 
@@ -706,13 +857,19 @@ mempalace status
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
+| Multi-process ChromaDB corruption | **Eliminated** | HTTP server gatekeeper (READ-only) + mempalace MCP owns writes; verified via integration test |
 | Mempalace 3.3.0 breaking change in `search_memories()` API | Low | Adapter isolates; pin specific version if needed |
-| Native save hook conflicts with rawgentic Stop hook | Medium | Test together; mempalace uses `stop_hook_active` flag |
+| Native save hook conflicts with rawgentic Stop hook | Medium | Test together; mempalace uses `stop_hook_active` flag; Stop hooks run in parallel (verified) |
 | MCP tool registration fails | Low | Standard MCP pattern; fall back to hooks-only |
 | ChromaDB migration corrupts data | Low | Backup palace dir before Phase 1; mempalace migrate is well-tested |
-| Cold-start Python latency too high | Medium | If >800ms perceived, add tiny daemon as v2 optimization |
-| Claude doesn't follow proactive search instructions | High | Layer 1+2 hook injection primes the pump; Layer 4 catches contradictions |
+| Cold-start Python latency too high | **Eliminated** | HTTP server stays warm; ~100ms hook latency confirmed |
+| Claude doesn't follow proactive search instructions | High | Layer 1+2 hook injection primes the pump; Layer 4 catches contradictions; skill instructions bake in proactive search |
 | Mempalace 4.0 breaks adapter contract | Low | Adapter major-version aligned; write v4 adapter when 4.0 ships |
+| Mempalace 3.4 changes MCP tool names | Medium | `verify_behavioral_contract()` startup probe detects and warns |
+| Silent ingest failure (data loss) | Medium | Canary test runs continuously; surfaces failures to user immediately |
+| Bash hook shell injection from user prompts | **Eliminated** | All user content piped via stdin → `curl --data-binary @-`; never shell-expanded |
+| PostToolUse fact-check creates edit-loop friction | Medium | 30s debounce + per-file dedup throttling |
+| Phase ordering creates intermediate broken state | **Eliminated** | Phases reordered; Phase 5 is single atomic cutover |
 
 ## Rollback Plan
 
@@ -721,31 +878,185 @@ mempalace status
 | 0 (Onboarding) | `rm -rf ~/.mempalace; mv ~/.mempalace.backup ~/.mempalace` |
 | 1 (Upgrade) | Pin back to 3.0.0 in pyproject.toml; reinstall |
 | 1.5 (Bulk mine) | Drop wings via `mempalace` CLI or restore backup |
-| 2 (Native hooks) | Remove from `~/.claude/settings.json` |
-| 3 (MCP) | `claude mcp remove mempalace` |
-| 4-7 (Code changes) | Revert via git |
+| 2 (Adapter) | Revert via git — adapter not yet wired into anything |
+| 3 (HTTP server trim) | Revert via git; restart old server |
+| 4 (Build hooks) | Revert via git — hooks not yet installed |
+| **5 (ATOMIC CUTOVER)** | **Revert hooks/hooks.json from git; remove mempalace native hooks from `~/.claude/settings.json`; `claude mcp remove mempalace`; restart old systemd service. Total: < 2 minutes.** |
+| 6 (Delete old) | Revert via git |
+| 7 (Skills) | Revert via git |
+| 8 (Docs) | Revert via git |
 
 Memories are safe throughout — palace storage location is unchanged.
 
+## Test Coverage
+
+Testing is non-negotiable. The system handles memory critical to the agentic coding process — silent failures cause weeks-of-context loss before discovery.
+
+### Unit Tests (CI-blocking)
+
+**`adapter.py` test matrix:**
+
+| Test | Asserts |
+|---|---|
+| `test_search_returns_empty_when_mempalace_missing` | Adapter returns `[]` when `import mempalace` fails |
+| `test_search_filters_by_memory_type` | Only matching memory types in result |
+| `test_search_filters_by_flag` | Only matching flags in result |
+| `test_search_no_exception_on_chromadb_error` | Error → empty result, never raise |
+| `test_wakeup_returns_empty_context_on_exception` | `WakeupContext(text="", tokens=0, layers=[])` on failure |
+| `test_wakeup_includes_l0_and_l1` | Successful return has both layers |
+| `test_fact_check_maps_upstream_format` | Mempalace `check_text()` output → `FactIssue[]` |
+| `test_fact_check_returns_empty_for_clean_text` | No issues → `[]`, not None |
+| `test_health_returns_unavailable_when_collection_missing` | `HealthStatus(available=False)` |
+| `test_version_validation_rejects_below_min` | < 3.3.0 logs warning |
+| `test_version_validation_rejects_above_max` | >= 4.0.0 logs warning |
+| `test_behavioral_contract_detects_missing_mcp_tool` | Returns `ContractViolation[]` if expected tool absent |
+
+**`server.py` test matrix:**
+
+| Test | Asserts |
+|---|---|
+| `test_healthz_returns_200_when_mempalace_available` | Standard health probe |
+| `test_search_endpoint_returns_additionalContext_format` | Response shape matches hook expectation |
+| `test_search_filters_by_min_similarity` | Below threshold → empty |
+| `test_wakeup_endpoint_includes_token_count` | Response has `text`, `tokens`, `layers` |
+| `test_fact_check_endpoint_returns_empty_when_clean` | No issues → `{}` |
+| `test_ingest_endpoint_returns_410` | Removed endpoint returns 410 Gone |
+
+**`lib.sh` test matrix (bash test framework — bats or similar):**
+
+| Test | Asserts |
+|---|---|
+| `test_should_search_skips_short_prompt` | `< 20 chars` returns 1 |
+| `test_should_search_skips_slash_command` | `/foo` returns 1 |
+| `test_should_search_skips_confirmation` | `yes`, `lgtm`, etc. return 1 |
+| `test_should_search_respects_debounce` | `< 60s` since last → returns 1 |
+| `test_should_fact_check_respects_per_file_dedup` | Same path twice → second returns 1 |
+| `test_resolve_project_walks_up_to_workspace_root` | Works from project sub-directory |
+| `test_resolve_project_uses_session_registry_first` | Registry hit overrides lastUsed |
+
+### Integration Tests (CI-blocking)
+
+**Five non-negotiable integration tests:**
+
+1. **End-to-end canary test** — write known fact via Save Hook MCP simulation, verify recall via adapter
+2. **Concurrent write protection** — two processes attempt simultaneous writes, assert no corruption
+3. **Graceful degradation** — uninstall mempalace, run all hooks, assert empty responses + zero errors + session unblocked
+4. **Hook timeout compliance** — all three hooks complete within declared timeouts (10s, 5s, 5s) under cold-start conditions
+5. **Adapter version boundary** — install mempalace 3.2.x and 4.0.x test versions, assert appropriate warnings
+
+### Canary Test (Continuous Health Signal)
+
+This runs in CI AND as a runtime health check:
+
+```python
+# tests/canary.py
+import subprocess
+import json
+import time
+import requests
+
+CANARY_FACT = f"CANARY_{int(time.time())}: blue elephants prefer Tuesdays"
+
+def write_canary():
+    """Simulate mempalace Save Hook filing the canary via MCP."""
+    # In production this happens via Claude calling mempalace_add_drawer
+    # For the canary, we directly invoke mempalace's add API
+    from mempalace.miner import add_drawer
+    add_drawer(CANARY_FACT, wing="canary", source_file="canary.test")
+
+def verify_canary_recall(timeout=30):
+    """Search for canary, assert it's findable."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        r = requests.post("http://127.0.0.1:8420/search",
+            json={"prompt": "blue elephants Tuesday"},
+            params={"min_similarity": 0.3, "limit": 5},
+            timeout=4)
+        results = r.json().get("results", [])
+        if any(CANARY_FACT in res["content"] for res in results):
+            return True
+        time.sleep(2)
+    return False
+
+if __name__ == "__main__":
+    write_canary()
+    if verify_canary_recall():
+        print("CANARY PASS")
+        exit(0)
+    else:
+        print("CANARY FAIL — memory pipeline broken")
+        exit(1)
+```
+
+Run after every save hook trigger in production. Surface failures to user immediately.
+
+### Test Infrastructure
+
+- **Mock mempalace imports** — `conftest.py` fixtures using `unittest.mock` to simulate mempalace API at version boundaries
+- **Process-isolated ChromaDB** — each test gets its own temp palace via `tmp_path` fixture
+- **Pin embeddings** — use deterministic embedding model in tests to avoid borderline similarity flips
+- **Mock the clock** — `freezegun` or similar for debounce testing
+- **No real mempalace process** — bash hook tests stub `curl` to return canned responses
+
+### Flaky Test Patterns to Avoid
+
+| Pattern | Mitigation |
+|---|---|
+| Time-dependent debounce | Mock `date +%s` via wrapper |
+| Embedding-dependent thresholds | Pin embedding model + fixture data |
+| Cold-start latency assertions | Don't assert wall-clock latency in CI; use trace counters |
+| Concurrent write tests | Use synchronization primitives (latch) to force timing, not `sleep` |
+
 ## Success Criteria
 
-1. Server upgrade research from this brainstorm session is searchable in mempalace within 24 hours of implementation
-2. Auto-recall fires on >80% of substantive prompts without user intervention
-3. Wakeup context injects within 500ms of session start
-4. Fact-checking catches at least one contradiction per week of active development
-5. Claude proactively uses MCP tools during brainstorming/implementation 5+ times per session (Layer 3)
-6. Total bridge plugin code reduces from ~700 lines to ~250 lines
-7. Plugin upgrade to mempalace 3.4.x requires zero code changes (adapter contract holds)
-8. Plugin upgrade to mempalace 4.0 requires <200 lines of adapter changes only
+### Acceptance Criteria (CI-blocking)
+
+These MUST pass before merge:
+
+1. **Server upgrade research recall** — content from this brainstorm is searchable in mempalace within 24 hours of implementation (canary-style validation)
+2. **Wakeup latency** — wakeup context injects within 500ms of session start (warm HTTP server)
+3. **Code reduction** — total bridge plugin code is ≤ 350 lines (adjusted from 250 since HTTP server stays)
+4. **Canary test passes** in CI on every commit
+5. **Concurrent write test passes** — two processes can attempt simultaneous palace access without corruption
+6. **Graceful degradation passes** — uninstalling mempalace doesn't break sessions
+
+### Operational Metrics (Post-Deploy, Not CI)
+
+These are tracked via instrumentation, not CI:
+
+7. **Auto-recall fire rate** — fires on > 80% of substantive prompts (instrumented via per-layer counters)
+8. **Layer 3 proactive usage** — Claude calls MCP tools 5+ times per session (telemetry, not enforceable)
+9. **Fact-checking catches** — at least one contradiction per week of active development (rate, not deterministic)
+
+### Conditional (Future)
+
+These are testable only when those versions ship:
+
+10. **Mempalace 3.4.x compatibility** — adapter requires zero code changes
+11. **Mempalace 4.0 migration** — requires < 200 lines of adapter changes only
+
+## Stop Hook Timing (Verified Behavior)
+
+Verified via Claude Code documentation research:
+
+- Stop hook fires **after all tool calls in the turn complete** — does NOT interrupt mid-tool-use ✓
+- Long tool calls (3-min test suites) cause timing skew — message count overshoots before save fires
+- `decision: "block"` forces Claude to take another turn responding to the reason
+- Multiple Stop hooks (e.g., rawgentic WAL + mempalace save) run **in parallel** — order not guaranteed
+- `stop_hook_active` flag prevents loops on consecutive blocks
+
+**User-facing impact:** Every 15 messages, Claude pauses ~2-5 seconds to file memories via MCP tools. In a 60-message session, that's ~4 forced pauses. Document this behavior. Expose `SAVE_INTERVAL` (mempalace already supports this in `mempal_save_hook.sh`) so users can tune.
 
 ## Out of Scope (v2 Considerations)
 
 - Cross-wing tunnel-aware recall (search related projects when current project has thin matches)
 - LLM-based closet generation via `closet_llm.py`
-- Long-running adapter daemon if cold-start latency proves problematic
+- Query expansion / intent extraction for Layer 2 (mempalace's BM25 + closet layer covers ~80% of cases; defer until operational metrics show insufficient recall)
+- Memory pruning / importance decay for scale (>50k entries)
 - MCP resource exposure when Claude Code adds support
 - Multi-user palace isolation (currently single-user)
 - Encrypted palace storage
+- Tunable smart-gate thresholds via config (currently hardcoded: 20 chars, 60s debounce, 0.5 similarity)
 
 ## References
 
