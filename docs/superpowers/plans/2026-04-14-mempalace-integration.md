@@ -1,5 +1,20 @@
 # MemPalace Integration Implementation Plan
 
+> **Revision 2** — incorporates fixes from reflexion critique (2026-04-15):
+> - Version comparison via tuple parsing (was: broken string compare)
+> - `set -e` removed from hooks; `|| true` on external command calls
+> - BEHAVIORAL_CONTRACT extended with expected_mcp_tools list + probe
+> - Added Tasks 31b (version boundary integration test) and 31c (AC1/AC2/AC3 verification)
+> - Removed endpoints return 410 Gone with helpful messages (was: 404)
+> - `_parse_body()` helper in server prevents 500 on malformed JSON
+> - Integration test fixture has `p.kill()` fallback after terminate timeout
+> - `/diagnostic` reports both `uptime_secs` and `idle_secs` correctly
+> - `/canary_write` routes through `adapter.canary_write()` (was: direct miner import)
+> - Magic numbers extracted to constants (TRUNCATION_MARKER, TRUNCATION_BUDGET)
+> - CLI fallback added to adapter.search() degradation chain
+> - Task 40 cross-repo PR workflow made explicit
+> - Removed unused `frozen_clock` fixture; documented `mock_mempalace_unavailable` limitations
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the lossy custom enrichment pipeline with mempalace 3.3.0's native ingest + four-layer recall, mediated by a thin HTTP gatekeeper and a versioned adapter contract.
@@ -319,21 +334,18 @@ def isolated_palace(tmp_path, monkeypatch):
 
 @pytest.fixture
 def mock_mempalace_unavailable(monkeypatch):
-    """Simulate mempalace not being installed."""
+    """Simulate mempalace not being installed.
+
+    NOTE: This only works for code that does lazy/late imports of mempalace.
+    Module-level imports in adapter.py have already resolved by the time this
+    fixture activates. To test 'mempalace not installed' for already-imported
+    symbols, use direct mock patching like:
+        with patch('rawgentic_memory.adapter.search_memories', None):
+            ...
+    """
     import sys
-    real_mempalace = sys.modules.get("mempalace")
     monkeypatch.setitem(sys.modules, "mempalace", None)
-    yield
-    if real_mempalace is not None:
-        monkeypatch.setitem(sys.modules, "mempalace", real_mempalace)
-
-
-@pytest.fixture
-def frozen_clock(monkeypatch):
-    """Freeze time.time() to a known value for debounce tests."""
-    frozen = [1700000000.0]
-    monkeypatch.setattr("time.time", lambda: frozen[0])
-    return frozen
+    # monkeypatch auto-reverts on test exit — no manual cleanup needed.
 
 
 @pytest.fixture
@@ -342,6 +354,8 @@ def adapter(isolated_palace):
     from rawgentic_memory.adapter import MempalaceAdapter
     return MempalaceAdapter(palace_path=str(isolated_palace))
 ```
+
+(Removed `frozen_clock` fixture — the debounce logic lives in bash, not Python. Bash hook tests pre-write the timestamp file directly to control debounce state, no Python time mocking needed.)
 
 - [ ] **Step 3: Verify fixtures importable**
 
@@ -613,7 +627,12 @@ except ImportError:
 
 Add to `MempalaceAdapter` class:
 ```python
+    # Per-result content cap to bound additionalContext budget.
+    # 3 results * 1500 chars ≈ 1100 tokens, well within Claude Code's 10,000-char limit.
     MAX_CONTENT_CHARS_PER_RESULT = 1500
+    TRUNCATION_MARKER = "... [truncated]"  # 15 chars
+    # Reserve room for marker + small buffer so total stays <= MAX_CONTENT_CHARS_PER_RESULT
+    TRUNCATION_BUDGET = MAX_CONTENT_CHARS_PER_RESULT - len(TRUNCATION_MARKER) - 5
 
     def search(
         self,
@@ -625,7 +644,9 @@ Add to `MempalaceAdapter` class:
     ) -> list[SearchResult]:
         try:
             if search_memories is None:
-                return []
+                # Fallback to CLI if Python API import failed (e.g., partial install).
+                # CLI is slow (~1s cold start) — only used as degradation path.
+                return self._search_via_cli(query, project=project, limit=limit)
             raw = search_memories(query, self.palace_path, wing=project, n_results=limit)
             results: list[SearchResult] = []
             for h in raw.get("results", []):
@@ -646,10 +667,32 @@ Add to `MempalaceAdapter` class:
                 results = [item for item in results if item.flag == flag]
             for item in results:
                 if len(item.content) > self.MAX_CONTENT_CHARS_PER_RESULT:
-                    item.content = item.content[:self.MAX_CONTENT_CHARS_PER_RESULT - 20] + "... [truncated]"
+                    item.content = item.content[:self.TRUNCATION_BUDGET] + self.TRUNCATION_MARKER
             return results
         except Exception as e:
             logger.warning("search failed: %s", e)
+            return []
+
+    def _search_via_cli(self, query: str, project: str | None = None,
+                        limit: int = 10) -> list[SearchResult]:
+        """CLI fallback used when Python API import failed.
+        Slow (~1s cold start) — degradation path only. Returns empty on any error."""
+        import subprocess, json as _json
+        try:
+            cmd = ["mempalace", "search", query, "--limit", str(limit), "--json"]
+            if project:
+                cmd += ["--wing", project]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+            if result.returncode != 0:
+                return []
+            data = _json.loads(result.stdout)
+            return [
+                SearchResult(content=h.get("text", ""), project=h.get("wing", ""),
+                             similarity=float(h.get("similarity", 0.0)))
+                for h in data.get("results", [])
+            ]
+        except Exception as e:
+            logger.warning("CLI search fallback failed: %s", e)
             return []
 ```
 
@@ -748,6 +791,17 @@ Add to `MempalaceAdapter` class:
         except Exception as e:
             logger.warning("fact_check failed: %s", e)
             return []
+
+    def canary_write(self, fact: str) -> bool:
+        """Test-only: write a canary fact to the 'canary' wing.
+        Maintains the 'all writes go through adapter' invariant."""
+        try:
+            from mempalace.miner import add_drawer
+            add_drawer(fact, wing="canary", source_file="canary.test")
+            return True
+        except Exception as e:
+            logger.warning("canary_write failed: %s", e)
+            return False
 ```
 
 - [ ] **Step 5: Run tests, verify they pass**
@@ -783,6 +837,14 @@ class ContractViolation:
 Add to `MempalaceAdapter` class:
 ```python
     BEHAVIORAL_CONTRACT = {
+        "expected_mcp_tools": [
+            "mempalace_search",
+            "mempalace_add_drawer",
+            "mempalace_diary_write",
+            "mempalace_kg_query",
+            "mempalace_kg_add",
+            "mempalace_kg_invalidate",
+        ],
         "expected_save_interval": 15,
         "expected_palace_dir": "~/.mempalace/palace",
         "expected_kg_path": "~/.mempalace/knowledge_graph.sqlite3",
@@ -815,6 +877,37 @@ class TestBehavioralContract:
         violations = adapter.verify_behavioral_contract()
         # Returns at least one violation when mempalace is missing
         assert any(v.field == "mempalace_module" for v in violations)
+
+    def test_behavioral_contract_lists_expected_mcp_tools(self):
+        tools = MempalaceAdapter.BEHAVIORAL_CONTRACT["expected_mcp_tools"]
+        assert "mempalace_search" in tools
+        assert "mempalace_add_drawer" in tools
+        assert "mempalace_diary_write" in tools
+
+    def test_verify_detects_missing_mcp_tool(self, isolated_palace, monkeypatch):
+        from unittest.mock import MagicMock
+        # Simulate mempalace.mcp_server with only a partial tool set
+        fake_mcp = MagicMock()
+        fake_mcp.TOOLS = {"mempalace_search": object()}  # missing add_drawer, etc.
+        monkeypatch.setattr("mempalace.mcp_server", fake_mcp)
+        adapter = MempalaceAdapter(palace_path=str(isolated_palace))
+        violations = adapter.verify_behavioral_contract()
+        missing_fields = [v.field for v in violations]
+        assert "mcp_tool:mempalace_add_drawer" in missing_fields
+
+
+class TestVersionComparison:
+    """Critical: never compare semver as Python strings.
+    '3.10.0' < '3.3.0' returns True lexically — wrong."""
+
+    def test_parse_version_returns_tuple(self):
+        assert MempalaceAdapter._parse_version("3.3.0") == (3, 3, 0)
+        assert MempalaceAdapter._parse_version("3.10.0") == (3, 10, 0)
+
+    def test_tuple_comparison_correct_for_double_digit_minor(self):
+        # The bug we're guarding against: 3.10 should be > 3.3
+        assert MempalaceAdapter._parse_version("3.10.0") > MempalaceAdapter._parse_version("3.3.0")
+        assert MempalaceAdapter._parse_version("3.3.10") > MempalaceAdapter._parse_version("3.3.2")
 ```
 
 - [ ] **Step 3: Run tests, verify they fail**
@@ -826,6 +919,12 @@ Expected: First three pass on constants; behavioral contract tests FAIL on missi
 
 Add to `MempalaceAdapter`:
 ```python
+    @staticmethod
+    def _parse_version(vs: str) -> tuple[int, ...]:
+        """Parse semver as tuple of ints. Critical: never compare versions as strings.
+        '3.10.0' < '3.3.0' returns True lexically — wrong."""
+        return tuple(int(x) for x in vs.split(".") if x.isdigit())
+
     def verify_behavioral_contract(self) -> list[ContractViolation]:
         violations: list[ContractViolation] = []
         try:
@@ -839,17 +938,20 @@ Add to `MempalaceAdapter`:
             ))
             return violations
 
-        # Check version bounds
+        # Check version bounds (tuple comparison, NOT string comparison)
         try:
             from mempalace.version import __version__ as v
-            if v < self.MIN_VERSION:
+            v_tuple = self._parse_version(v)
+            min_tuple = self._parse_version(self.MIN_VERSION)
+            max_tuple = self._parse_version(self.MAX_VERSION)
+            if v_tuple < min_tuple:
                 violations.append(ContractViolation(
                     field="mempalace_version",
                     expected=f">={self.MIN_VERSION}",
                     actual=v,
                     severity="error",
                 ))
-            if v >= self.MAX_VERSION:
+            if v_tuple >= max_tuple:
                 violations.append(ContractViolation(
                     field="mempalace_version",
                     expected=f"<{self.MAX_VERSION}",
@@ -858,6 +960,22 @@ Add to `MempalaceAdapter`:
                 ))
         except Exception:
             pass
+
+        # Check expected MCP tools are exposed by mempalace
+        try:
+            from mempalace import mcp_server as _mcp
+            available_tools = set(getattr(_mcp, "TOOLS", {}).keys())
+            for tool_name in self.BEHAVIORAL_CONTRACT.get("expected_mcp_tools", []):
+                if tool_name not in available_tools:
+                    violations.append(ContractViolation(
+                        field=f"mcp_tool:{tool_name}",
+                        expected="present",
+                        actual="missing",
+                        severity="warning",
+                    ))
+        except Exception:
+            pass
+
         return violations
 ```
 
@@ -979,7 +1097,9 @@ def build_app(palace_path: str | None = None, idle_timeout: int = 14400) -> Fast
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.adapter = MempalaceAdapter(palace_path=palace_path)
-        app.state.last_activity = time.monotonic()
+        now = time.monotonic()
+        app.state.start_time = now           # for uptime calculation
+        app.state.last_activity = now        # for idle timeout calculation
         app.state.idle_timeout = idle_timeout
         violations = app.state.adapter.verify_behavioral_contract()
         for v in violations:
@@ -996,10 +1116,36 @@ def build_app(palace_path: str | None = None, idle_timeout: int = 14400) -> Fast
             request.app.state.last_activity = time.monotonic()
         return await call_next(request)
 
+    async def _parse_body(request: Request) -> dict:
+        """Tolerant JSON body parser — malformed body returns {} instead of 500."""
+        try:
+            return await request.json()
+        except Exception:
+            return {}
+
     @app.get("/healthz")
     async def healthz():
         h = app.state.adapter.health()
         return asdict(h)
+
+    # Explicit 410 Gone for removed endpoints — gives clients a clearer
+    # error than 404 (which suggests "wrong URL" rather than "endpoint removed").
+    REMOVED_ENDPOINTS = {
+        "/ingest": "Use mempalace's native Save Hook (every 15 messages, blocks Claude to file via MCP).",
+        "/reindex": "Use `mempalace mine <dir>` CLI directly.",
+        "/kg/invalidate": "Use `mempalace_kg_invalidate` MCP tool directly.",
+        "/kg/entity": "Use `mempalace_kg_query` MCP tool directly.",
+        "/kg/timeline": "Use `mempalace_kg_timeline` MCP tool directly.",
+    }
+
+    @app.api_route("/ingest", methods=["POST", "GET"])
+    @app.api_route("/reindex", methods=["POST", "GET"])
+    @app.api_route("/kg/{rest:path}", methods=["POST", "GET"])
+    async def gone(request: Request):
+        path = request.url.path
+        # Exact-match lookup falls back to /kg/* prefix
+        msg = REMOVED_ENDPOINTS.get(path) or REMOVED_ENDPOINTS.get(f"/kg/{path.split('/')[-1]}", "Endpoint removed.")
+        raise HTTPException(410, detail=msg)
 
     return app
 
@@ -1079,7 +1225,7 @@ Inside `build_app()` in `rawgentic_memory/server.py`, after the `/healthz` endpo
     @app.post("/search")
     async def search(request: Request, project: str | None = None,
                      min_similarity: float = 0.0, limit: int = 3):
-        body = await request.json()
+        body = await _parse_body(request)
         query = body.get("prompt", "")
         if not query:
             return {"results": [], "additionalContext": ""}
@@ -1209,7 +1355,7 @@ Inside `build_app()`:
 ```python
     @app.post("/fact_check")
     async def fact_check(request: Request):
-        body = await request.json()
+        body = await _parse_body(request)
         text = (
             body.get("text")
             or body.get("tool_input", {}).get("content")
@@ -1278,9 +1424,14 @@ Inside `build_app()`:
     async def diagnostic():
         h = app.state.adapter.health()
         violations = app.state.adapter.verify_behavioral_contract()
+        now = time.monotonic()
         return {
             "components": {
-                "server": {"healthy": True, "uptime_secs": int(time.monotonic() - app.state.last_activity)},
+                "server": {
+                    "healthy": True,
+                    "uptime_secs": int(now - app.state.start_time),
+                    "idle_secs": int(now - app.state.last_activity),
+                },
                 "mempalace": {"available": h.available, "version": h.version},
                 "palace": {"doc_count": h.doc_count},
             },
@@ -1331,20 +1482,18 @@ Inside `build_app()`:
 ```python
     @app.post("/canary_write")
     async def canary_write(request: Request):
-        body = await request.json()
+        body = await _parse_body(request)
         wing = body.get("wing", "")
         if wing != "canary":
             raise HTTPException(403, detail="canary_write only accepts wing=canary")
         fact = body.get("fact", "")
         if not fact:
             raise HTTPException(400, detail="missing fact")
-        try:
-            from mempalace.miner import add_drawer
-            add_drawer(fact, wing="canary", source_file="canary.test")
-            return {"status": "ok", "wing": "canary"}
-        except Exception as e:
-            logger.exception("canary_write failed")
-            raise HTTPException(500, detail=str(e))
+        # Route through adapter to maintain "all access goes through adapter" invariant.
+        ok = app.state.adapter.canary_write(fact)
+        if not ok:
+            raise HTTPException(500, detail="canary_write failed; check server logs")
+        return {"status": "ok", "wing": "canary"}
 ```
 
 - [ ] **Step 4: Run tests**
@@ -1369,18 +1518,18 @@ git commit -m "feat(server): add /canary_write endpoint (gated to canary wing)"
 Append to `tests/test_server_slim.py`:
 ```python
 class TestRemovedEndpoints:
-    def test_ingest_endpoint_not_found(self, client):
+    def test_ingest_endpoint_returns_410_with_helpful_message(self, client):
         r = client.post("/ingest", json={})
-        # Either 404 (not registered) or 410 (gone)
-        assert r.status_code in (404, 410)
+        assert r.status_code == 410
+        assert "Save Hook" in r.json()["detail"]
 
-    def test_reindex_endpoint_not_found(self, client):
+    def test_reindex_endpoint_returns_410(self, client):
         r = client.post("/reindex", json={})
-        assert r.status_code in (404, 410)
+        assert r.status_code == 410
 
-    def test_kg_invalidate_not_found(self, client):
+    def test_kg_invalidate_returns_410(self, client):
         r = client.post("/kg/invalidate", json={})
-        assert r.status_code in (404, 410)
+        assert r.status_code == 410
 ```
 
 - [ ] **Step 2: Run tests, expect to pass already (we removed by rewriting)**
@@ -1436,7 +1585,7 @@ STATE_DIR="${MEMORY_STATE_DIR:-/tmp/memorypalace-state}"
 PLUGIN_VENV="${PLUGIN_VENV:-${CLAUDE_PLUGIN_ROOT}/.venv}"
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-$HOME/rawgentic}"
 
-mkdir -p "$STATE_DIR" 2>/dev/null
+mkdir -p "$STATE_DIR" 2>/dev/null || true   # || true: don't trigger set -e in restricted /tmp
 
 # === Health check (no startup) — fast, safe in 5s-timeout hooks ===
 server_is_healthy() {
@@ -1546,15 +1695,17 @@ Replace `hooks/session-start`:
 #!/bin/bash
 # SessionStart — wakeup context injection (Layer 0 + Layer 1)
 # Allowed to lazy-start server (10s timeout budget).
-set -e
+# NOTE: set -e is intentionally OMITTED — bash hooks call external commands
+# (curl, jq) that may legitimately fail (server down, malformed registry).
+# We use explicit `|| exit 0` for graceful degradation instead.
 source "$(dirname "$0")/lib.sh"
 
 ensure_server_running || exit 0
 PROJECT=$(resolve_project)
 
 # URL-encode project name
-ENCODED_PROJECT=$(jq -rn --arg p "${PROJECT:-}" '$p|@uri')
-RESPONSE=$(curl -sS --max-time 8 "$MEMORY_SERVER_URL/wakeup?project=$ENCODED_PROJECT" 2>/dev/null)
+ENCODED_PROJECT=$(jq -rn --arg p "${PROJECT:-}" '$p|@uri' 2>/dev/null) || ENCODED_PROJECT=""
+RESPONSE=$(curl -sS --max-time 8 "$MEMORY_SERVER_URL/wakeup?project=$ENCODED_PROJECT" 2>/dev/null) || RESPONSE=""
 [[ -z "$RESPONSE" ]] && exit 0
 
 TEXT=$(echo "$RESPONSE" | jq -r '.text // empty')
@@ -1604,21 +1755,21 @@ Replace `hooks/user-prompt-submit`:
 #!/bin/bash
 # UserPromptSubmit — smart-gated auto-recall (Layer 2)
 # Tight 5s timeout — health check only, no server startup.
-set -e
+# NOTE: set -e omitted — see session-start hook for rationale.
 source "$(dirname "$0")/lib.sh"
 
 HOOK_INPUT=$(cat)
-PROMPT=$(echo "$HOOK_INPUT" | jq -r '.prompt // empty')
+PROMPT=$(echo "$HOOK_INPUT" | jq -r '.prompt // empty' 2>/dev/null) || PROMPT=""
 PROJECT=$(resolve_project)
 
 should_search "$PROMPT" "$PROJECT" || exit 0
 server_is_healthy || exit 0
 
-ENCODED_PROJECT=$(jq -rn --arg p "${PROJECT:-}" '$p|@uri')
+ENCODED_PROJECT=$(jq -rn --arg p "${PROJECT:-}" '$p|@uri' 2>/dev/null) || ENCODED_PROJECT=""
 RESPONSE=$(echo "$HOOK_INPUT" | curl -sS --max-time 4 \
     -H "Content-Type: application/json" \
     --data-binary @- \
-    "$MEMORY_SERVER_URL/search?project=$ENCODED_PROJECT&min_similarity=$RECALL_SIMILARITY_THRESHOLD&limit=$RECALL_MAX_RESULTS" 2>/dev/null)
+    "$MEMORY_SERVER_URL/search?project=$ENCODED_PROJECT&min_similarity=$RECALL_SIMILARITY_THRESHOLD&limit=$RECALL_MAX_RESULTS" 2>/dev/null) || RESPONSE=""
 
 [[ -z "$RESPONSE" ]] && exit 0
 CONTEXT=$(echo "$RESPONSE" | jq -r '.additionalContext // empty')
@@ -1676,21 +1827,21 @@ Create `hooks/post-tool-use`:
 #!/bin/bash
 # PostToolUse — fact-checking on writes (Layer 4)
 # Throttled to bound cumulative latency in refactoring sessions.
-set -e
+# NOTE: set -e omitted — see session-start hook for rationale.
 source "$(dirname "$0")/lib.sh"
 
 HOOK_INPUT=$(cat)
-TOOL=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty')
+TOOL=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty' 2>/dev/null) || TOOL=""
 [[ "$TOOL" =~ ^(Edit|Write|MultiEdit)$ ]] || exit 0
 
-FILE_PATH=$(echo "$HOOK_INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty')
+FILE_PATH=$(echo "$HOOK_INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null) || FILE_PATH=""
 should_fact_check "$FILE_PATH" || exit 0
 server_is_healthy || exit 0
 
 RESPONSE=$(echo "$HOOK_INPUT" | curl -sS --max-time 4 \
     -H "Content-Type: application/json" \
     --data-binary @- \
-    "$MEMORY_SERVER_URL/fact_check" 2>/dev/null)
+    "$MEMORY_SERVER_URL/fact_check" 2>/dev/null) || RESPONSE=""
 
 [[ -z "$RESPONSE" ]] && exit 0
 CONTEXT=$(echo "$RESPONSE" | jq -r '.additionalContext // empty')
@@ -2014,7 +2165,7 @@ SERVER_URL = "http://127.0.0.1:8421"
 
 @pytest.fixture(scope="module")
 def server():
-    """Start a test server on port 8421."""
+    """Start a test server on port 8421. Always cleaned up, even if hung."""
     import subprocess, time
     p = subprocess.Popen(
         ["python", "-m", "rawgentic_memory.server", "--port", "8421", "--timeout", "60"],
@@ -2026,8 +2177,13 @@ def server():
         except Exception:
             time.sleep(0.5)
     yield
+    # Always tear down — terminate first, then kill if still alive after 5s.
     p.terminate()
-    p.wait(timeout=5)
+    try:
+        p.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.wait(timeout=2)
 
 
 def test_concurrent_canary_writes_are_safe(server):
@@ -2196,6 +2352,148 @@ Expected: All three PASS
 ```bash
 git add tests/integration/test_hook_timeouts.py
 git commit -m "test(integration): verify hook timeout compliance under cold-start conditions"
+```
+
+### Task 31b: Adapter version boundary integration test
+
+**Files:**
+- Create: `tests/integration/test_version_boundary.py`
+
+This test is required by spec section "Test Coverage > Non-negotiable integration tests". It uses pytest mocking rather than installing real older mempalace versions (which would conflict with the in-use installation).
+
+- [ ] **Step 1: Write the test**
+
+Create `tests/integration/test_version_boundary.py`:
+```python
+"""Verify adapter MIN_VERSION/MAX_VERSION boundary behavior.
+
+Required by spec — uses mocking instead of installing test versions to avoid
+conflicting with the in-use mempalace installation.
+"""
+import pytest
+from unittest.mock import patch
+from rawgentic_memory.adapter import MempalaceAdapter, ContractViolation
+
+
+def _violations_for_version(version_str: str, isolated_palace) -> list[ContractViolation]:
+    """Helper: run verify_behavioral_contract with a mocked mempalace version."""
+    adapter = MempalaceAdapter(palace_path=str(isolated_palace))
+    with patch("mempalace.version.__version__", version_str):
+        return adapter.verify_behavioral_contract()
+
+
+def test_below_min_version_yields_error_violation(isolated_palace):
+    """3.2.0 < MIN_VERSION (3.3.0) → error severity."""
+    violations = _violations_for_version("3.2.0", isolated_palace)
+    version_violations = [v for v in violations if v.field == "mempalace_version"]
+    assert any(v.severity == "error" for v in version_violations)
+
+
+def test_at_min_version_passes(isolated_palace):
+    """3.3.0 == MIN_VERSION → no version violation."""
+    violations = _violations_for_version("3.3.0", isolated_palace)
+    version_violations = [v for v in violations if v.field == "mempalace_version"]
+    assert len(version_violations) == 0
+
+
+def test_above_max_version_yields_warning(isolated_palace):
+    """4.0.0 >= MAX_VERSION → warning severity."""
+    violations = _violations_for_version("4.0.0", isolated_palace)
+    version_violations = [v for v in violations if v.field == "mempalace_version"]
+    assert any(v.severity == "warning" for v in version_violations)
+
+
+def test_double_digit_minor_version_compares_correctly(isolated_palace):
+    """3.10.0 > 3.3.0 (this is the tuple-comparison bug-guard test).
+    String comparison would say 3.10.0 < 3.3.0 (lexically '1' < '3')."""
+    violations = _violations_for_version("3.10.0", isolated_palace)
+    version_violations = [v for v in violations if v.field == "mempalace_version"]
+    # 3.10.0 should be ABOVE max (4.0.0) check — so no error from MIN, but warning from MAX
+    error_violations = [v for v in version_violations if v.severity == "error"]
+    assert len(error_violations) == 0, "3.10.0 misclassified as below MIN — string comparison bug"
+```
+
+- [ ] **Step 2: Run the test**
+
+Run: `.venv/bin/python -m pytest tests/integration/test_version_boundary.py -v 2>&1 | tail -10`
+Expected: All four tests PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/test_version_boundary.py
+git commit -m "test(integration): adapter version boundary — 3.2.0 errors, 4.0.0 warns, 3.10.0 doesn't trigger string-compare bug"
+```
+
+### Task 31c: AC1, AC2, AC3 verification script
+
+**Files:**
+- Create: `tests/integration/test_acceptance_criteria.py`
+
+These are CI-blocking acceptance criteria from the spec that need explicit measurement.
+
+- [ ] **Step 1: Write verification script**
+
+Create `tests/integration/test_acceptance_criteria.py`:
+```python
+"""Verify CI-blocking acceptance criteria from spec section 'Success Criteria'."""
+import time
+import subprocess
+import requests
+from pathlib import Path
+
+REPO = Path(__file__).parent.parent.parent
+SERVER_URL = "http://127.0.0.1:8420"
+
+
+def test_ac2_wakeup_latency_under_500ms_warm():
+    """AC2: Wakeup context injects within 500ms of session start (warm server)."""
+    # Warm the server first
+    requests.get(f"{SERVER_URL}/healthz", timeout=2)
+    start = time.time()
+    r = requests.get(f"{SERVER_URL}/wakeup", timeout=2)
+    elapsed = time.time() - start
+    assert r.status_code == 200
+    assert elapsed < 0.5, f"Wakeup took {elapsed*1000:.0f}ms, exceeds 500ms budget"
+
+
+def test_ac3_bridge_code_under_350_lines():
+    """AC3: Total bridge plugin code is <= 350 lines (excluding tests)."""
+    files = [
+        REPO / "rawgentic_memory" / "adapter.py",
+        REPO / "rawgentic_memory" / "server.py",
+        REPO / "rawgentic_memory" / "__init__.py",
+    ]
+    total = 0
+    for f in files:
+        if f.exists():
+            with open(f) as fh:
+                total += sum(1 for line in fh if line.strip() and not line.strip().startswith("#"))
+    assert total <= 350, f"Bridge plugin code is {total} lines, exceeds 350-line budget"
+
+
+def test_ac1_known_content_recallable():
+    """AC1: Server upgrade research from brainstorm session is searchable.
+    Pre-condition: Phase 1.5 (bulk-mine) must have completed."""
+    r = requests.post(f"{SERVER_URL}/search?min_similarity=0.3&limit=5",
+                      json={"prompt": "EPYC server upgrade Dell R7525"},
+                      timeout=4)
+    assert r.status_code == 200
+    body = r.json()
+    # If bulk-mine ran, this content should be findable
+    assert len(body.get("results", [])) > 0, "No results — bulk-mine may not have completed"
+```
+
+- [ ] **Step 2: Run (requires server + bulk-mine completed)**
+
+Run: `.venv/bin/python -m pytest tests/integration/test_acceptance_criteria.py -v 2>&1 | tail -10`
+Expected: All three PASS
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/integration/test_acceptance_criteria.py
+git commit -m "test(integration): explicit acceptance criteria measurement (AC1, AC2, AC3)"
 ```
 
 ### Task 32: Run full test suite before cutover
@@ -2433,15 +2731,27 @@ git commit -m "docs: add Memory section to CLAUDE.md instructing proactive MCP t
 
 ### Task 40: Update rawgentic workflow skills
 
+**IMPORTANT — CROSS-REPO WORK:** This task modifies files in the **rawgentic** repo, NOT the rawgentic-memorypalace repo. Per the team policy "Never push directly to main; always create a branch and open a PR", this requires its own branch + PR workflow in the rawgentic repo. Steps below handle the cross-repo flow explicitly.
+
 **Files:**
 - Modify: `~/rawgentic/projects/rawgentic/skills/brainstorming/SKILL.md` (or wherever it lives)
 - Modify: similar for implement-feature, fix-bug, refactor
 
-- [ ] **Step 1: Locate skill files**
+- [ ] **Step 1: Switch to rawgentic repo and create feature branch**
+
+```bash
+cd ~/rawgentic/projects/rawgentic
+git checkout main
+git pull origin main
+git checkout -b feature/memory-aware-skills
+```
+Expected: New branch created from up-to-date main
+
+- [ ] **Step 2: Locate skill files**
 
 Run: `find ~/rawgentic/projects/rawgentic/skills/ -name "SKILL.md" 2>&1 | head -10`
 
-- [ ] **Step 2: Add memory step to brainstorming**
+- [ ] **Step 3: Add memory step to brainstorming**
 
 For `brainstorming/SKILL.md`, add as a new first step:
 ```markdown
@@ -2452,7 +2762,7 @@ For `brainstorming/SKILL.md`, add as a new first step:
    proposing approaches.
 ```
 
-- [ ] **Step 3: Add memory step to implement-feature**
+- [ ] **Step 4: Add memory step to implement-feature**
 
 For `implement-feature/SKILL.md`, add after context gathering:
 ```markdown
@@ -2462,7 +2772,7 @@ feature topic and `mempalace_kg_query` for entity-specific facts. Reference
 findings explicitly when designing the implementation.
 ```
 
-- [ ] **Step 4: Add memory step to fix-bug**
+- [ ] **Step 5: Add memory step to fix-bug**
 
 For `fix-bug/SKILL.md`, add as a new first step:
 ```markdown
@@ -2471,7 +2781,7 @@ For `fix-bug/SKILL.md`, add as a new first step:
    documented root causes and fixes.
 ```
 
-- [ ] **Step 5: Add memory step to refactor**
+- [ ] **Step 6: Add memory step to refactor**
 
 For `refactor/SKILL.md`, add early:
 ```markdown
@@ -2481,12 +2791,34 @@ explain why code looks the way it does. Avoid undoing decisions that have
 documented reasoning.
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit, push, and open PR in rawgentic repo**
 
 ```bash
 cd ~/rawgentic/projects/rawgentic
 git add skills/
 git commit -m "feat(skills): add mempalace memory search steps to brainstorming, implement-feature, fix-bug, refactor"
+GH_TOKEN=$(cat ~/.secrets/github-pat) git push -u origin feature/memory-aware-skills
+GH_TOKEN=$(cat ~/.secrets/github-pat) gh pr create --title "feat(skills): memory-aware steps in 4 workflow skills" --body "$(cat <<'EOF'
+## Summary
+Adds memory-search steps to brainstorming, implement-feature, fix-bug, and refactor skills. Triggers Layer 3 (proactive MCP) usage, reinforcing rawgentic-memorypalace's auto-recall.
+
+Companion PR: rawgentic-memorypalace#<MEMORYPALACE_PR_NUMBER>
+
+## Test plan
+- [ ] Verify each updated skill SKILL.md still parses correctly
+- [ ] Run brainstorming skill on a topic with mempalace running, confirm Claude calls mempalace_search
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+EOF
+)"
+```
+Expected: PR URL printed; link from main rawgentic-memorypalace PR
+
+- [ ] **Step 8: Switch back to memorypalace branch**
+
+```bash
+cd ~/rawgentic/projects/rawgentic-memorypalace
+git checkout feature/mempalace-integration-redesign
 ```
 
 ### Task 41: Update README
