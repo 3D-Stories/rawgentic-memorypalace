@@ -10,6 +10,7 @@
 |---|---|---|
 | 2026-04-14 (r1) | Initial design | Brainstorm session output |
 | 2026-04-14 (r2) | Reinstate HTTP server as single-process gatekeeper; reorder phases for atomic cutover; pipe JSON to stdin (no shell expansion); add behavioral contract; add canary test; throttle PostToolUse | BMAD party-mode review (Winston, Amelia, Murat, Dr. Quinn) verified ChromaDB multi-process unsafe + cold-start latency 7-10x worse than estimated |
+| 2026-04-14 (r3) | Fix per-file dedup filename; fix canary multi-process write; split `ensure_server_running` from `server_is_healthy`; downgrade ChromaDB risk to "Low"; env-configurable thresholds; case-insensitive confirmation patterns; max content cap; document Claude compliance dependency; troubleshooting section; diagnostic endpoint; canary write endpoint | Reflexion critique (Requirements Validator, Solution Architect, Code Quality Reviewer) found 3 critical code bugs + 4 high-priority refinements |
 
 ## Goal
 
@@ -65,11 +66,13 @@ This also solves the cold-start latency problem (measured at ~3 seconds per cold
 │  │ Sessions     │   │ stop (every 15)  │   │  UserPromptSubmit  │   │
 │  │              │   │ precompact       │   │  PostToolUse       │   │
 │  │              │   │ Background mining│   │                    │   │
-│  │              │   │ BM25+Closets     │   │ HTTP server (~80 LOC) │
+│  │              │   │ BM25+Closets     │   │ HTTP server (~100 LOC)│
 │  │              │   │ Layers (L0-L3)   │   │  GET  /healthz     │   │
-│  │              │   │ Halls/KG/Tunnels │   │  POST /search      │   │
-│  │              │   │ AAAK closets     │   │  GET  /wakeup      │   │
+│  │              │   │ Halls/KG/Tunnels │   │  GET  /diagnostic  │   │
+│  │              │   │ AAAK closets     │   │  POST /search      │   │
+│  │              │   │                  │   │  GET  /wakeup      │   │
 │  │              │   │                  │   │  POST /fact_check  │   │
+│  │              │   │                  │   │  POST /canary_write│   │
 │  │              │   │                  │   │                    │   │
 │  │              │   │                  │   │ Adapter (v3):      │   │
 │  │              │   │                  │   │  search/wakeup/    │   │
@@ -146,25 +149,30 @@ class MempalaceAdapter:
         "expected_kg_path": "~/.mempalace/knowledge_graph.sqlite3",
     }
 
+    # Note: The signatures below are the public interface contract.
+    # The implementation section adds `self` and additional internal helpers.
+    # Type annotations (return types, defaults) are part of the contract —
+    # changes to these fields trigger CONTRACT_VERSION bumps.
+
     def search(
+        self,
         query: str,
         project: str | None = None,
         memory_type: str | None = None,
         flag: str | None = None,
         limit: int = 10,
-    ) -> list[SearchResult]
+    ) -> list[SearchResult]: ...
 
     def wakeup(
-        project: str | None = None
-    ) -> WakeupContext
+        self,
+        project: str | None = None,
+    ) -> WakeupContext: ...
 
-    def fact_check(
-        text: str
-    ) -> list[FactIssue]
+    def fact_check(self, text: str) -> list[FactIssue]: ...
 
-    def health() -> HealthStatus
+    def health(self) -> HealthStatus: ...
 
-    def verify_behavioral_contract() -> list[ContractViolation]
+    def verify_behavioral_contract(self) -> list[ContractViolation]:
         """Probe mempalace at startup; report missing tools or
            changed defaults. Logged as warnings, not blocking."""
 ```
@@ -233,14 +241,23 @@ class MempalaceAdapter:
         self.palace_path = palace_path
         self._validate_version()
 
+    # Per-result content cap to bound additionalContext budget.
+    # 3 results * 1500 chars = 4500 chars (~1100 tokens), well within
+    # Claude Code's 10,000-char additionalContext limit.
+    MAX_CONTENT_CHARS_PER_RESULT = 1500
+
     def search(self, query, project=None, memory_type=None, flag=None, limit=10):
         try:
-            r = search_memories(query, self.palace_path, wing=project, n_results=limit)
-            results = [self._to_search_result(h) for h in r.get('results', [])]
+            raw = search_memories(query, self.palace_path, wing=project, n_results=limit)
+            results = [self._to_search_result(h) for h in raw.get('results', [])]
             if memory_type:
-                results = [r for r in results if r.memory_type == memory_type]
+                results = [item for item in results if item.memory_type == memory_type]
             if flag:
-                results = [r for r in results if r.flag == flag]
+                results = [item for item in results if item.flag == flag]
+            # Truncate long drawer content to bound injection size.
+            for item in results:
+                if len(item.content) > self.MAX_CONTENT_CHARS_PER_RESULT:
+                    item.content = item.content[:self.MAX_CONTENT_CHARS_PER_RESULT - 20] + "... [truncated]"
             return results
         except Exception as e:
             self._log_warning("search failed", e)
@@ -251,6 +268,9 @@ class MempalaceAdapter:
             l0 = Layer0().render()
             l1 = Layer1(palace_path=self.palace_path, wing=project).generate()
             text = f"{l0}\n\n{l1}"
+            # Token count is approximate: chars/4 is a rough heuristic that
+            # over-estimates for code-heavy content and under-estimates for
+            # natural language with longer words. Accuracy ±25%.
             return WakeupContext(text=text, tokens=len(text)//4, layers=["L0","L1"])
         except Exception as e:
             self._log_warning("wakeup failed", e)
@@ -297,6 +317,20 @@ class MempalaceAdapter:
 | `rawgentic/hooks/notes-size-handler.py` ingest call | ~15 | mempalace handles it |
 
 **Total deleted: ~755 lines.** The HTTP server is **kept** (slimmed from ~500 to ~80 lines) because multi-process ChromaDB access is unsafe — the server is the single-process gatekeeper.
+
+### Critical Dependency: Ingest Reliability Depends on Claude Compliance
+
+With the bridge no longer doing ingest, **memory population depends entirely on Claude responding to mempalace's `STOP_BLOCK_REASON` by calling MCP tools** (`mempalace_diary_write`, `mempalace_add_drawer`, `mempalace_kg_add`). If a future Claude model behavior change causes Claude to skip or under-perform these MCP calls:
+- Ingest silently degrades or stops
+- Recall returns empty results for new content
+- The canary test catches this within one canary cycle (typically a few minutes)
+
+Mitigations:
+1. **Canary test** (continuous health signal) detects stop-of-ingest within minutes
+2. **Telemetry counter** (per-session save invocations) tracked via mempalace's `hook.log`
+3. **Degradation alert** surfaced to user if save count is zero across multiple sessions
+
+This is an explicit trust boundary: the bridge trusts mempalace's hook system and Claude's MCP tool compliance. The trade-off is justified — the alternative (custom enrichment) is verifiably lossy (regex-based, drops content silently).
 
 ### What Replaces It
 
@@ -527,7 +561,10 @@ PROJECT=$(resolve_project)
 # Smart gate (length, slash, confirmation patterns, debounce)
 should_search "$PROMPT" "$PROJECT" || exit 0
 
-ensure_server_running || exit 0
+# Health check only — DO NOT attempt server startup here.
+# Startup polling can take 10s, exceeding our 5s hook timeout.
+# If server isn't running, exit cleanly; session-start will start it next session.
+server_is_healthy || exit 0
 
 # POST /search with full hook input as body. Server extracts prompt,
 # searches mempalace, filters by similarity > 0.5, returns:
@@ -536,7 +573,7 @@ ensure_server_running || exit 0
 RESPONSE=$(echo "$HOOK_INPUT" | curl -sS --max-time 4 \
     -H "Content-Type: application/json" \
     --data-binary @- \
-    "http://127.0.0.1:8420/search?project=$(jq -rn --arg p "$PROJECT" '$p|@uri')&min_similarity=0.5&limit=3" 2>/dev/null)
+    "http://127.0.0.1:8420/search?project=$(jq -rn --arg p "$PROJECT" '$p|@uri')&min_similarity=$RECALL_SIMILARITY_THRESHOLD&limit=$RECALL_MAX_RESULTS" 2>/dev/null)
 
 [[ -z "$RESPONSE" ]] && exit 0
 CONTEXT=$(echo "$RESPONSE" | jq -r '.additionalContext // empty')
@@ -569,7 +606,8 @@ TOOL=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty')
 FILE_PATH=$(echo "$HOOK_INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty')
 should_fact_check "$FILE_PATH" || exit 0
 
-ensure_server_running || exit 0
+# Health check only — DO NOT attempt server startup here (5s timeout budget).
+server_is_healthy || exit 0
 
 # POST /fact_check with full hook input as body. Server extracts content,
 # runs fact_checker, returns:
@@ -585,7 +623,7 @@ CONTEXT=$(echo "$RESPONSE" | jq -r '.additionalContext // empty')
 [[ -z "$CONTEXT" ]] && exit 0
 
 date +%s > "$STATE_DIR/last-fact-check-ts"
-echo "$FILE_PATH" >> "$STATE_DIR/fact-check-paths-$(date +%s | head -c 5)"
+echo "$FILE_PATH" >> "$STATE_DIR/fact-check-paths-$CLAUDE_SESSION_ID"
 
 echo "$RESPONSE" | jq '{
   hookSpecificOutput: {
@@ -601,15 +639,24 @@ exit 0
 Key functions:
 
 ```bash
-# Lazy-start the HTTP server if not running. Idempotent.
-ensure_server_running() {
+# Cheap health check (no startup) — for hooks with tight timeout budgets.
+# Returns 0 if server is responsive, 1 otherwise. Never blocks > 1s.
+server_is_healthy() {
     local url="${MEMORY_SERVER_URL:-http://127.0.0.1:8420}"
-    if curl -sS --max-time 1 "$url/healthz" >/dev/null 2>&1; then
-        return 0
-    fi
+    curl -sS --max-time 1 "$url/healthz" >/dev/null 2>&1
+}
+
+# Lazy-start the HTTP server if not running. Idempotent.
+# ONLY safe to call from session-start hook (10s timeout budget).
+# UserPromptSubmit and PostToolUse hooks (5s timeout) MUST use
+# server_is_healthy() instead — startup polling can take up to 10s.
+ensure_server_running() {
+    server_is_healthy && return 0
     [[ "${MEMORY_NO_AUTOSTART:-0}" == "1" ]] && return 1
 
-    local port=$(echo "$url" | sed -E 's|.*:([0-9]+).*|\1|')
+    local url="${MEMORY_SERVER_URL:-http://127.0.0.1:8420}"
+    local port=$(echo "$url" | grep -oE ':[0-9]+(/|$)' | grep -oE '[0-9]+' | head -1)
+    [[ -z "$port" ]] && port=8420
     local lockfile="/tmp/memorypalace-start.lock"
     (
         flock -n 9 || exit 0
@@ -622,20 +669,30 @@ ensure_server_running() {
     # Poll healthz for up to 10 seconds
     for i in $(seq 1 20); do
         sleep 0.5
-        curl -sS --max-time 1 "$url/healthz" >/dev/null 2>&1 && return 0
+        server_is_healthy && return 0
     done
     return 1
 }
 
+# All tunable thresholds — overridable via environment variables.
+# Defaults are intentionally conservative; tune in production based on metrics.
+RECALL_MIN_PROMPT_CHARS="${RECALL_MIN_PROMPT_CHARS:-20}"
+RECALL_DEBOUNCE_SECS="${RECALL_DEBOUNCE_SECS:-60}"
+RECALL_SIMILARITY_THRESHOLD="${RECALL_SIMILARITY_THRESHOLD:-0.5}"
+FACT_CHECK_DEBOUNCE_SECS="${FACT_CHECK_DEBOUNCE_SECS:-30}"
+RECALL_MAX_RESULTS="${RECALL_MAX_RESULTS:-3}"
+
 # Smart gate for UserPromptSubmit. Operates on $PROMPT, never shell-expands it.
 should_search() {
     local prompt="$1" project="$2"
-    [[ ${#prompt} -lt 20 ]] && return 1
+    [[ ${#prompt} -lt $RECALL_MIN_PROMPT_CHARS ]] && return 1
     [[ "$prompt" == /* ]] && return 1
-    [[ "$prompt" =~ ^(commit|push|yes|no|y|n|ok|done|next|looks good|lgtm)$ ]] && return 1
+    # Case-insensitive match for confirmation patterns (bash 4+ ${var,,}).
+    local lower_prompt="${prompt,,}"
+    [[ "$lower_prompt" =~ ^(commit|push|yes|no|y|n|ok|done|next|looks[[:space:]]good|lgtm|sgtm|sounds[[:space:]]good|do[[:space:]]it|go|continue)$ ]] && return 1
     local now=$(date +%s)
     local last=$(cat "$STATE_DIR/last-recall-ts-$project" 2>/dev/null || echo 0)
-    [[ $((now - last)) -lt 60 ]] && return 1
+    [[ $((now - last)) -lt $RECALL_DEBOUNCE_SECS ]] && return 1
     return 0
 }
 
@@ -645,7 +702,7 @@ should_fact_check() {
     local file_path="$1"
     local now=$(date +%s)
     local last=$(cat "$STATE_DIR/last-fact-check-ts" 2>/dev/null || echo 0)
-    [[ $((now - last)) -lt 30 ]] && return 1
+    [[ $((now - last)) -lt $FACT_CHECK_DEBOUNCE_SECS ]] && return 1
 
     # Per-file dedup — never fact-check the same file twice in a session
     local session_paths_file="$STATE_DIR/fact-check-paths-$CLAUDE_SESSION_ID"
@@ -741,14 +798,16 @@ Create `rawgentic_memory/adapter.py`:
 
 ### Phase 3: Trim HTTP Server (Day 2, ~3 hours) — REORDERED
 
-Reduce `rawgentic_memory/server.py` from ~500 lines to ~80:
+Reduce `rawgentic_memory/server.py` from ~500 lines to ~100:
 - Keep `GET /healthz`, `GET /wakeup`, `POST /search`, `POST /fact_check`
+- **Add `GET /diagnostic`** — reports health of all components (HTTP server, mempalace MCP availability, palace doc count, last save timestamp, canary status). Output is JSON consumable by both humans and monitoring tools.
+- **Add `POST /canary_write`** — test-only endpoint for canary; writes to `canary` wing only via single-process mempalace API. Rejects writes to other wings.
 - Remove `POST /ingest`, `POST /reindex`, `GET /kg/*`
 - All endpoints route through `adapter.py`
 - Lazy-start + idle shutdown unchanged
-- Server is READ-ONLY against ChromaDB (writes go through mempalace MCP)
+- Server is READ-ONLY for non-canary content (writes go through mempalace MCP)
 
-**Validation:** All four endpoints respond correctly. `/ingest` returns 410 Gone (deleted).
+**Validation:** All endpoints respond correctly. `/ingest` returns 410 Gone (deleted). `/diagnostic` reports component health.
 
 ### Phase 4: Build New Bridge Hooks (Day 2, ~3 hours) — REORDERED
 
@@ -857,7 +916,7 @@ mempalace status
 
 | Risk | Likelihood | Mitigation |
 |---|---|---|
-| Multi-process ChromaDB corruption | **Eliminated** | HTTP server gatekeeper (READ-only) + mempalace MCP owns writes; verified via integration test |
+| Multi-process ChromaDB corruption | **Low** (residual risk: stale HNSW reads during write) | HTTP server gatekeeper (READ-only) + mempalace MCP owns writes; verified via integration test. Residual: HNSW binary index has no file locking — concurrent reads during HNSW rebuild could return stale (not corrupt) results. Practical impact minimal since writes are brief (~ms) and infrequent (every 15 messages). |
 | Mempalace 3.3.0 breaking change in `search_memories()` API | Low | Adapter isolates; pin specific version if needed |
 | Native save hook conflicts with rawgentic Stop hook | Medium | Test together; mempalace uses `stop_hook_active` flag; Stop hooks run in parallel (verified) |
 | MCP tool registration fails | Low | Standard MCP pattern; fall back to hooks-only |
@@ -950,25 +1009,43 @@ This runs in CI AND as a runtime health check:
 
 ```python
 # tests/canary.py
-import subprocess
+# CRITICAL: Canary writes go through the HTTP server (single writer).
+# Direct ChromaDB writes from a separate process violate the single-process
+# gatekeeper architecture and could corrupt the palace.
 import json
 import time
+import fcntl
+import os
 import requests
 
 CANARY_FACT = f"CANARY_{int(time.time())}: blue elephants prefer Tuesdays"
+CANARY_LOCK = "/tmp/memorypalace-canary.lock"
+SERVER_URL = os.environ.get("MEMORY_SERVER_URL", "http://127.0.0.1:8420")
+
+def acquire_canary_lock():
+    """Prevent canary from running concurrently with active sessions.
+    The HTTP server holds an inverse lock when serving live traffic;
+    this lock guarantees serialized canary execution."""
+    lock_fd = open(CANARY_LOCK, 'w')
+    try:
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_fd
+    except BlockingIOError:
+        print("CANARY SKIP — another canary is running")
+        exit(0)
 
 def write_canary():
-    """Simulate mempalace Save Hook filing the canary via MCP."""
-    # In production this happens via Claude calling mempalace_add_drawer
-    # For the canary, we directly invoke mempalace's add API
-    from mempalace.miner import add_drawer
-    add_drawer(CANARY_FACT, wing="canary", source_file="canary.test")
+    """Write canary via HTTP server (single-writer-safe)."""
+    r = requests.post(f"{SERVER_URL}/canary_write",
+        json={"fact": CANARY_FACT, "wing": "canary"},
+        timeout=8)
+    r.raise_for_status()
 
 def verify_canary_recall(timeout=30):
     """Search for canary, assert it's findable."""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        r = requests.post("http://127.0.0.1:8420/search",
+        r = requests.post(f"{SERVER_URL}/search",
             json={"prompt": "blue elephants Tuesday"},
             params={"min_similarity": 0.3, "limit": 5},
             timeout=4)
@@ -979,14 +1056,21 @@ def verify_canary_recall(timeout=30):
     return False
 
 if __name__ == "__main__":
-    write_canary()
-    if verify_canary_recall():
-        print("CANARY PASS")
-        exit(0)
-    else:
-        print("CANARY FAIL — memory pipeline broken")
-        exit(1)
+    lock = acquire_canary_lock()
+    try:
+        write_canary()
+        if verify_canary_recall():
+            print("CANARY PASS")
+            exit(0)
+        else:
+            print("CANARY FAIL — memory pipeline broken")
+            exit(1)
+    finally:
+        lock.close()
+        os.unlink(CANARY_LOCK)
 ```
+
+The HTTP server exposes a `POST /canary_write` test-only endpoint that writes via mempalace's MCP tool simulation, preserving the single-writer guarantee. The endpoint is gated to only accept writes to the `canary` wing.
 
 Run after every save hook trigger in production. Surface failures to user immediately.
 
@@ -1056,7 +1140,58 @@ Verified via Claude Code documentation research:
 - MCP resource exposure when Claude Code adds support
 - Multi-user palace isolation (currently single-user)
 - Encrypted palace storage
-- Tunable smart-gate thresholds via config (currently hardcoded: 20 chars, 60s debounce, 0.5 similarity)
+- ~~Tunable smart-gate thresholds via config~~ — **moved to v1**: env vars `RECALL_MIN_PROMPT_CHARS`, `RECALL_DEBOUNCE_SECS`, `RECALL_SIMILARITY_THRESHOLD`, `FACT_CHECK_DEBOUNCE_SECS`, `RECALL_MAX_RESULTS` are configurable from day one
+
+## Troubleshooting
+
+The system has 3+ processes (Claude session, mempalace MCP, bridge HTTP server) plus optional `mempalace mine` background runs. When something goes wrong, the diagnostic flow:
+
+### Symptom: No memory context appearing at session start
+
+1. Check bridge server health: `curl http://127.0.0.1:8420/diagnostic | jq`
+2. Check session-start hook ran: `grep "SESSION START" ~/.mempalace/hook_state/hook.log`
+3. Check wakeup endpoint returns content: `curl 'http://127.0.0.1:8420/wakeup?project=PROJECT'`
+4. If `text` is empty, palace may be empty: `mempalace status`
+5. Verify identity file exists: `cat ~/.mempalace/identity.txt`
+
+### Symptom: Auto-recall not firing on substantive prompts
+
+1. Check hook is configured: `cat ~/.claude/settings.json | jq '.hooks.UserPromptSubmit'`
+2. Check smart-gate isn't blocking — log debug to stderr
+3. Check debounce: `cat $STATE_DIR/last-recall-ts-PROJECT` (subtract from `date +%s`)
+4. Lower similarity threshold temporarily: `RECALL_SIMILARITY_THRESHOLD=0.3 claude ...`
+
+### Symptom: Memory not being saved (Save Hook silent)
+
+1. Check mempalace's hook log: `tail -50 ~/.mempalace/hook_state/hook.log`
+2. Check Claude is responding to STOP_BLOCK_REASON: look for `mempalace_diary_write` or `mempalace_add_drawer` calls in transcript
+3. Run canary: `python -m tests.canary` — if PASS, recall pipeline works but ingest is broken; if FAIL, both broken
+4. Verify mempalace MCP is registered: `claude mcp list | grep mempalace`
+
+### Symptom: Hooks timing out
+
+1. Check server is healthy: `curl --max-time 1 http://127.0.0.1:8420/healthz`
+2. If server not running and you're hitting `user-prompt-submit` — that hook intentionally does NOT start the server. Send a new prompt or restart Claude to trigger session-start lazy-start.
+3. Check for stuck mempalace process: `ps aux | grep mempalace`
+
+### Symptom: ChromaDB errors in server log
+
+1. Check `tail -100 /tmp/memorypalace-server.log`
+2. If "database is locked" — concurrent write conflict; should auto-retry, but check for runaway `mempalace mine` process
+3. If "no such collection" — palace was reset; re-run Phase 1.5 (bulk mine)
+4. Run `mempalace migrate` if schema versions don't match
+
+### Quick Health Check Command
+
+```bash
+# One-shot health probe — exits 0 if all green, 1 with details if not
+curl -sS http://127.0.0.1:8420/diagnostic | jq -e '
+  .components.server.healthy and
+  .components.mempalace.available and
+  .components.palace.doc_count > 0 and
+  (.components.last_save_minutes_ago // 9999) < 60
+' || echo "DEGRADED — see /diagnostic for details"
+```
 
 ## References
 
