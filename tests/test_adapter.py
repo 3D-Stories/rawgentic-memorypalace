@@ -1,6 +1,5 @@
 """Tests for MempalaceAdapter — versioned wrapper around mempalace."""
 import pytest
-from pathlib import Path
 from rawgentic_memory.adapter import MempalaceAdapter, HealthStatus, WakeupContext
 
 
@@ -23,10 +22,10 @@ class TestHealth:
 
 class TestWakeup:
     def test_wakeup_returns_l0_and_l1(self, isolated_palace):
-        # Create identity file
-        identity = Path(isolated_palace.parent) / "identity.txt"
-        identity.write_text("Test identity for unit tests")
-
+        # Layer0 reads from ~/.mempalace/identity.txt, not from tmp_path, so it
+        # returns default "No identity configured..." text in test isolation —
+        # that's fine. The assertions below validate the method wires L0+L1 and
+        # produces a non-empty token count regardless of identity content.
         adapter = MempalaceAdapter(palace_path=str(isolated_palace))
         ctx = adapter.wakeup()
         assert isinstance(ctx, WakeupContext)
@@ -34,13 +33,17 @@ class TestWakeup:
         assert "L1" in ctx.layers
         assert ctx.tokens > 0
 
-    def test_wakeup_returns_empty_on_exception(self, tmp_path):
-        bad_path = tmp_path / "does_not_exist"
-        adapter = MempalaceAdapter(palace_path=str(bad_path))
+    def test_wakeup_returns_empty_when_mempalace_unavailable(
+        self, tmp_path, monkeypatch, mock_mempalace_unavailable
+    ):
+        # mock_mempalace_unavailable sets sys.modules["mempalace"] = None.
+        # We also null "mempalace.layers" in case a previous test has already
+        # cached it — Python skips parent lookup when the submodule key exists.
+        # Both entries set to None guarantee ModuleNotFoundError in wakeup()'s
+        # lazy `from mempalace.layers import ...`, exercising the except branch.
+        monkeypatch.setitem(__import__("sys").modules, "mempalace.layers", None)
+        adapter = MempalaceAdapter(palace_path=str(tmp_path))
         ctx = adapter.wakeup()
-        # mempalace 3.3.0 returns graceful fallback text rather than raising on
-        # a missing palace path — wakeup() always returns a valid WakeupContext.
-        assert isinstance(ctx, WakeupContext)
-        assert isinstance(ctx.text, str)
-        assert isinstance(ctx.tokens, int)
-        assert isinstance(ctx.layers, list)
+        assert ctx.text == ""
+        assert ctx.tokens == 0
+        assert ctx.layers == []
