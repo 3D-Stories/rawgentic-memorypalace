@@ -1,0 +1,77 @@
+#!/bin/bash
+# Hook: PostToolUse
+# Layer 4 fact-checking: triggered after Edit/Write/MultiEdit tool calls.
+# POSTs tool content to /fact_check and injects any issues as hookSpecificOutput.
+# Graceful degradation: exits 0 if server unreachable or gates block fact-check.
+# NO set -e — graceful degradation requires non-zero returns to be handled explicitly.
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/lib.sh"
+
+# Read full hook input from stdin
+HOOK_INPUT=$(cat)
+
+# Extract tool name
+TOOL_NAME=$(echo "$HOOK_INPUT" | jq -r '.tool_name // empty' 2>/dev/null) || true
+
+# Gate 1: only fact-check write-type tools
+case "$TOOL_NAME" in
+    Edit|Write|MultiEdit)
+        _debug "PostToolUse: tool=$TOOL_NAME — proceeding"
+        ;;
+    *)
+        _debug "PostToolUse: tool=$TOOL_NAME — not a write tool, skipping"
+        exit 0
+        ;;
+esac
+
+# Extract file path from tool input
+TOOL_INPUT=$(echo "$HOOK_INPUT" | jq -r '.tool_input // {}' 2>/dev/null) || true
+FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // .path // empty' 2>/dev/null) || true
+
+# Resolve project
+CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
+PROJECT=$(resolve_project "$CWD")
+
+_debug "PostToolUse: tool=$TOOL_NAME file=$FILE_PATH project=$PROJECT"
+
+# Gate 2: should_fact_check (debounce + per-file dedup)
+if ! should_fact_check "$FILE_PATH" "$PROJECT"; then
+    _debug "PostToolUse: gated out — no fact check"
+    exit 0
+fi
+
+# Gate 3: is server healthy?
+if ! server_is_healthy; then
+    _debug "PostToolUse: server not healthy — skipping fact check"
+    exit 0
+fi
+
+# POST full hook input to /fact_check
+# The server extracts text from tool_input.content or tool_input.new_string
+FACT_RESPONSE=$(echo "$HOOK_INPUT" | \
+    curl --silent --fail --connect-timeout 2 --max-time 8 \
+        -X POST \
+        -H "Content-Type: application/json" \
+        --data-binary @- \
+        "${MEMORY_SERVER_URL}/fact_check" 2>/dev/null) || true
+
+if [[ -n "$FACT_RESPONSE" ]]; then
+    # Validate JSON before outputting
+    if echo "$FACT_RESPONSE" | jq empty 2>/dev/null; then
+        # Only inject if there are actual issues (additionalContext is non-empty)
+        ADDITIONAL=$(echo "$FACT_RESPONSE" | jq -r '.additionalContext // empty' 2>/dev/null) || true
+        if [[ -n "$ADDITIONAL" ]]; then
+            _debug "PostToolUse: fact-check issues found"
+            printf '{"hookSpecificOutput": %s}\n' "$FACT_RESPONSE"
+        else
+            _debug "PostToolUse: fact-check clean"
+        fi
+    else
+        _debug "PostToolUse: fact-check returned non-JSON — ignoring"
+    fi
+else
+    _debug "PostToolUse: no fact-check response"
+fi
+
+exit 0
