@@ -154,3 +154,29 @@ class TestCanaryWrite:
         assert resp.status_code == 403
         data = resp.json()
         assert "canary" in data["detail"].lower()
+
+
+class TestRemovedEndpoints:
+    def test_ingest_returns_410(self, client):
+        """POST /ingest returns 410 Gone with migration hint."""
+        resp = client.post("/ingest", json={"session_id": "s", "notes": "n"})
+        assert resp.status_code == 410
+        data = resp.json()
+        assert "Save Hook" in data["detail"]
+
+    def test_reindex_returns_410(self, client):
+        """POST /reindex returns 410 Gone with migration hint."""
+        resp = client.post("/reindex", json={"source_dirs": ["/tmp"]})
+        assert resp.status_code == 410
+        data = resp.json()
+        assert "mine CLI" in data["detail"]
+
+    def test_kg_invalidate_returns_410(self, client):
+        """POST /kg/invalidate returns 410 Gone with migration hint."""
+        resp = client.post(
+            "/kg/invalidate",
+            json={"subject": "s", "predicate": "p", "object": "o"},
+        )
+        assert resp.status_code == 410
+        data = resp.json()
+        assert "MCP tools" in data["detail"]
