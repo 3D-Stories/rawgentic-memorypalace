@@ -31,3 +31,17 @@ All skills and hooks use this URL to reach the memory server. To override (e.g.,
 ## Server Shutdown
 
 Use `server.should_exit = True` (uvicorn's programmatic API) for graceful shutdown -- never `os.kill()` or `SIGTERM`. This is how the idle watcher (`_idle_watcher`) triggers shutdown, and how tests verify timeout behavior via a mock server object. The `app.state.server` reference is set in `run_server()`.
+
+## Memory
+
+When doing complex work (brainstorming, architecture, debugging, research),
+search mempalace for relevant prior decisions and context before proposing
+approaches. Your memories contain decisions, discoveries, and preferences
+from previous sessions that should inform current work.
+
+Use the `mempalace_search`, `mempalace_kg_query`, and `mempalace_kg_timeline`
+MCP tools proactively. The bridge plugin auto-injects context for substantive
+prompts (Layer 2), but mid-reasoning recall is your responsibility (Layer 3).
+
+If you find a contradiction with a stored decision (Layer 4 fact-check
+catches some automatically), surface it explicitly to the user.
