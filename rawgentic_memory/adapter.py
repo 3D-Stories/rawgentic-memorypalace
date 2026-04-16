@@ -49,6 +49,7 @@ class MempalaceAdapter:
     MAX_VERSION = "4.0.0"
     MAX_CONTENT_CHARS_PER_RESULT = 1500
     TRUNCATION_MARKER = "... [truncated]"
+    # -5: conservative pad for Unicode multi-byte chars counted differently by callers
     TRUNCATION_BUDGET = MAX_CONTENT_CHARS_PER_RESULT - len(TRUNCATION_MARKER) - 5
 
     def __init__(self, palace_path: str | None = None):
@@ -136,10 +137,9 @@ class MempalaceAdapter:
     ) -> list[SearchResult]:
         """CLI fallback when Python API import failed.
 
-        The CLI lacks --json output, so this parses structured text.
-        Falls back to empty results on any parse failure.
+        mempalace 3.3.0 CLI lacks --json output, so this is a best-effort
+        stub that returns [] rather than attempting fragile text parsing.
         """
-        import json as _json
         import subprocess
 
         try:
