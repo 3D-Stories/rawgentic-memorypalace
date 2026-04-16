@@ -1,0 +1,158 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sudo apt-get:*)",
+      "Bash(systemctl --user daemon-reload)",
+      "Bash(systemctl --user enable virtual-display.service vnc-server.service)",
+      "Bash(DISPLAY=:99 xdpyinfo)",
+      "Bash(systemctl --user is-active virtual-display.service)",
+      "Bash(systemctl --user is-active vnc-server.service)",
+      "Bash(notebooklm --version)",
+      "Bash(pipx install:*)",
+      "Bash(notebooklm skill:*)",
+      "Bash(systemctl --user status virtual-display.service vnc-server.service)",
+      "Bash(notebooklm status:*)",
+      "Bash(claude mcp:*)",
+      "mcp__google-ai-search__search_ai",
+      "Bash(hash -r)",
+      "Bash(npx --version)",
+      "Bash(notebooklm source:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''content'''',''''''''\\)[:5000]\\)\")",
+      "Bash(python3 -c \":*)",
+      "Bash(apt-get update:*)",
+      "Bash(apt-get install:*)",
+      "Bash(testparm -s)",
+      "Bash(GH_TOKEN=* gh issue view:*)",
+      "Bash(GH_TOKEN=* gh issue list:*)",
+      "Bash(GH_TOKEN=* gh pr view:*)",
+      "Bash(GH_TOKEN=* gh pr list:*)",
+      "Bash(GH_TOKEN=* gh pr diff:*)",
+      "Bash(GH_TOKEN=* gh pr checks:*)",
+      "Bash(GH_TOKEN=* gh run view:*)",
+      "Bash(GH_TOKEN=* gh run list:*)",
+      "Bash(GH_TOKEN=* gh api:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh api:*)",
+      "Bash(GH_TOKEN=* gh issue comment:*)",
+      "Bash(GH_TOKEN=* gh label create:*)",
+      "Bash(gh issue comment:*)",
+      "Bash(gh label create:*)",
+      "Bash(GH_TOKEN=$(cat ~/.secrets/github-pat) gh:*)",
+      "Bash(GH_TOKEN=$(cat ~/.secrets/github-pat) git:*)",
+      "Bash(source .venv/bin/activate:*)"
+    ],
+    "defaultMode": "acceptEdits"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/rawgentic-statusline.sh"
+  },
+  "enabledPlugins": {
+    "competitor-research@competitor-research": true,
+    "vnc-service@vnc-service": true,
+    "rawgentic@rawgentic": true,
+    "reflexion@context-engineering-kit": true,
+    "superpowers@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
+    "learning-output-style@claude-plugins-official": true,
+    "posthog@claude-plugins-official": true,
+    "astronomer-data-agents@claude-plugins-official": true,
+    "microsoft-docs@claude-plugins-official": true,
+    "remember@claude-plugins-official": true,
+    "imessage@claude-plugins-official": true,
+    "mcp-server-dev@claude-plugins-official": true,
+    "searchfit-seo@claude-plugins-official": true,
+    "data-engineering@claude-plugins-official": true,
+    "huggingface-skills@claude-plugins-official": true,
+    "svelte-skills@svelte-skills-kit": true,
+    "frontend-design@claude-plugins-official": true,
+    "generate-image@generate-image": true,
+    "rawgentic-memorypalace@rawgentic-memorypalace": true
+  },
+  "extraKnownMarketplaces": {
+    "competitor-research": {
+      "source": {
+        "source": "github",
+        "repo": "3D-Stories/competitor-research"
+      },
+      "autoUpdate": true
+    },
+    "vnc-service": {
+      "source": {
+        "source": "github",
+        "repo": "3D-Stories/vnc-service"
+      },
+      "autoUpdate": true
+    },
+    "rawgentic": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/3D-Stories/rawgentic.git"
+      },
+      "autoUpdate": true
+    },
+    "context-engineering-kit": {
+      "source": {
+        "source": "github",
+        "repo": "NeoLabHQ/context-engineering-kit"
+      },
+      "autoUpdate": true
+    },
+    "svelte-skills-kit": {
+      "source": {
+        "source": "github",
+        "repo": "spences10/svelte-skills-kit"
+      }
+    },
+    "generate-image": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/3D-Stories/generate-image.git"
+      }
+    },
+    "rawgentic-memorypalace": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/3D-Stories/rawgentic-memorypalace.git"
+      }
+    }
+  },
+  "effortLevel": "high",
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/rocky00717/rawgentic/projects/rawgentic-memorypalace/.venv/bin/mempalace hook run --hook stop --harness claude-code",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/rocky00717/rawgentic/projects/rawgentic-memorypalace/.venv/bin/mempalace hook run --hook precompact --harness claude-code",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
