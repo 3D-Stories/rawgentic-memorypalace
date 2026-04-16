@@ -1,52 +1,57 @@
 #!/bin/bash
 # Hook: UserPromptSubmit
-# Checks if 2h has elapsed since last ingest, triggers background ingest if so (AC2).
-# Timer updates unconditionally — server-side offset handles deduplication.
-# Graceful degradation: exits 0 if memory server is unreachable.
-
-set -euo pipefail
+# Smart-gated auto-recall: extracts prompt, applies gates, POSTs to /search.
+# Graceful degradation: exits 0 if server unreachable or gates block recall.
+# NO set -e — curl/jq non-zero must not abort silently.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
-read_hook_input
+# Read full hook input from stdin
+HOOK_INPUT=$(cat)
 
-CWD=$(get_field "cwd" 2>/dev/null || echo "")
-PROJECT=$(echo "$CWD" | xargs basename 2>/dev/null || echo "unknown")
-# Sanitize project name to safe URL chars
-PROJECT=$(echo "$PROJECT" | tr -cd 'a-zA-Z0-9_-')
-PROJECT="${PROJECT:-unknown}"
+# Extract prompt from hook input
+PROMPT=$(echo "$HOOK_INPUT" | jq -r '.prompt // empty' 2>/dev/null) || true
 
-SESSION_ID=$(get_field "session_id" 2>/dev/null || echo "hook-$(date +%s)")
-LAST_INGEST_FILE="${MEMORY_STATE_DIR}/memorypalace-last-ingest-${PROJECT}"
-INGEST_INTERVAL_SECONDS=7200  # 2 hours
+# Resolve project
+CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
+PROJECT=$(resolve_project "$CWD")
 
-# Check timer state
-NOW=$(date +%s)
-LAST_INGEST=0
-if [[ -f "$LAST_INGEST_FILE" ]]; then
-    LAST_INGEST=$(cat "$LAST_INGEST_FILE" 2>/dev/null || echo "0")
-    # Guard against corrupt timer file (non-numeric content)
-    if ! [[ "$LAST_INGEST" =~ ^[0-9]+$ ]]; then
-        _debug "Corrupt timer file, resetting"
-        LAST_INGEST=0
-    fi
+_debug "UserPromptSubmit: project=$PROJECT prompt_len=${#PROMPT}"
+
+# Gate: should we search at all?
+if ! should_search "$PROMPT" "$PROJECT"; then
+    _debug "UserPromptSubmit: gated out — no search"
+    exit 0
 fi
 
-ELAPSED=$((NOW - LAST_INGEST))
+# Gate: is server healthy?
+if ! server_is_healthy; then
+    _debug "UserPromptSubmit: server not healthy — skipping search"
+    exit 0
+fi
 
-if [[ "$ELAPSED" -ge "$INGEST_INTERVAL_SECONDS" ]]; then
-    _debug "2h elapsed since last ingest ($ELAPSED seconds) — gathering session notes"
-    NOTES=$(gather_session_notes "$CWD")
-    if [[ -n "$NOTES" ]]; then
-        PAYLOAD=$(build_ingest_payload "$PROJECT" "$SESSION_ID" "$NOTES" "timer" "")
-        call_memory_server "/ingest" "POST" "$PAYLOAD" >/dev/null 2>&1 &
-        disown 2>/dev/null || true
+# POST full hook input to /search with thresholds
+# The server's _parse_body() extracts .prompt from the JSON body
+SEARCH_RESPONSE=$(echo "$HOOK_INPUT" | \
+    curl --silent --fail --connect-timeout 2 --max-time 8 \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-Similarity-Threshold: ${RECALL_SIMILARITY_THRESHOLD}" \
+        -H "X-Max-Results: ${RECALL_MAX_RESULTS}" \
+        --data-binary @- \
+        "${MEMORY_SERVER_URL}/search" 2>/dev/null) || true
+
+if [[ -n "$SEARCH_RESPONSE" ]]; then
+    # Validate JSON before outputting
+    if echo "$SEARCH_RESPONSE" | jq empty 2>/dev/null; then
+        _debug "UserPromptSubmit: search response received"
+        printf '{"hookSpecificOutput": %s}\n' "$SEARCH_RESPONSE"
     else
-        _debug "No session notes found — skipping ingest"
+        _debug "UserPromptSubmit: search returned non-JSON — ignoring"
     fi
-    # Update timer unconditionally — server offset handles dedup on restart
-    echo "$NOW" > "$LAST_INGEST_FILE"
+else
+    _debug "UserPromptSubmit: no search response"
 fi
 
 exit 0
