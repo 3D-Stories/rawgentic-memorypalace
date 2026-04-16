@@ -1,54 +1,45 @@
 #!/bin/bash
-# Hook: SessionStart (matcher: startup|resume|compact)
-# - On startup/resume: calls /wakeup for context injection
-# - On compact: calls /ingest async (PreCompact trigger — AC1)
+# Hook: SessionStart
+# Wakeup-only: calls /wakeup to inject context at session start/resume.
 # Graceful degradation: exits 0 if memory server is unreachable.
-
-set -euo pipefail
+# NO set -e — graceful degradation requires non-zero returns to be handled explicitly.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib.sh"
 
-read_hook_input
+# Read hook input from stdin
+HOOK_INPUT=$(cat)
 
-# Verify mempalace is importable (declared dependency — should be installed)
-if ! python3 -c "import mempalace" 2>/dev/null; then
-    _debug "WARNING: mempalace not importable — memory backend will be unavailable"
+# Resolve project from workspace registry or cwd
+CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
+PROJECT=$(resolve_project "$CWD")
+
+# URL-encode project name (replace spaces with %20, etc.)
+PROJECT_ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "$PROJECT" 2>/dev/null) || true
+PROJECT_ENCODED="${PROJECT_ENCODED:-$PROJECT}"
+
+_debug "SessionStart: project=$PROJECT cwd=$CWD"
+
+# Ensure server is running (lazy-start allowed on session start — timeout 10s)
+if ! ensure_server_running; then
+    _debug "SessionStart: server not available — exiting 0"
+    exit 0
 fi
 
-# Determine event type from matcher
-EVENT_TYPE=$(get_field "event" 2>/dev/null || echo "startup")
+# Call /wakeup
+WAKEUP_RESPONSE=$(curl --silent --fail --connect-timeout 2 --max-time 8 \
+    "${MEMORY_SERVER_URL}/wakeup?project=${PROJECT_ENCODED}" 2>/dev/null) || true
 
-CWD=$(get_field "cwd" 2>/dev/null || echo "")
-PROJECT=$(echo "$CWD" | xargs basename 2>/dev/null || echo "unknown")
-# Sanitize project name to safe URL chars
-PROJECT=$(echo "$PROJECT" | tr -cd 'a-zA-Z0-9_-')
-PROJECT="${PROJECT:-unknown}"
-
-SESSION_ID=$(get_field "session_id" 2>/dev/null || echo "hook-$(date +%s)")
-
-case "$EVENT_TYPE" in
-    compact)
-        # PreCompact: gather content and fire-and-forget async ingest
-        _debug "PreCompact event — gathering session notes for async ingest"
-        NOTES=$(gather_session_notes "$CWD")
-        if [[ -n "$NOTES" ]]; then
-            PAYLOAD=$(build_ingest_payload "$PROJECT" "$SESSION_ID" "$NOTES" "precompact" "")
-            call_memory_server "/ingest" "POST" "$PAYLOAD" >/dev/null 2>&1 &
-            disown 2>/dev/null || true
-        else
-            _debug "No session notes found — skipping ingest"
-        fi
-        ;;
-    startup|resume|*)
-        # Wake-up: fetch context for session injection
-        _debug "SessionStart event — fetching wake-up context"
-        CONTEXT=$(call_memory_server "/wakeup?project=${PROJECT}" 2>/dev/null || echo "")
-        # Validate JSON before injecting into hook output
-        if [[ -n "$CONTEXT" ]] && echo "$CONTEXT" | jq empty 2>/dev/null; then
-            echo "{\"additionalContext\": $CONTEXT}"
-        fi
-        ;;
-esac
+if [[ -n "$WAKEUP_RESPONSE" ]]; then
+    # Validate JSON before outputting
+    if echo "$WAKEUP_RESPONSE" | jq empty 2>/dev/null; then
+        _debug "SessionStart: wakeup response received"
+        printf '{"hookSpecificOutput": %s}\n' "$WAKEUP_RESPONSE"
+    else
+        _debug "SessionStart: wakeup returned non-JSON — ignoring"
+    fi
+else
+    _debug "SessionStart: no wakeup response"
+fi
 
 exit 0
