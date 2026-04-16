@@ -1,6 +1,6 @@
 """Tests for MempalaceAdapter — versioned wrapper around mempalace."""
 import pytest
-from rawgentic_memory.adapter import MempalaceAdapter, HealthStatus, WakeupContext, SearchResult
+from rawgentic_memory.adapter import MempalaceAdapter, HealthStatus, WakeupContext, SearchResult, FactIssue
 
 
 class TestHealth:
@@ -172,3 +172,32 @@ class TestSearch:
         assert r.memory_type == "decision"
         assert r.timestamp == "2025-01-15"
         assert r.flag == "pinned"
+
+
+class TestFactCheck:
+    def test_fact_check_clean_text_returns_empty(self, isolated_palace):
+        adapter = MempalaceAdapter(palace_path=str(isolated_palace))
+        issues = adapter.fact_check("This is benign text with no entity claims.")
+        assert issues == []
+
+    def test_fact_check_returns_empty_on_exception(self):
+        from unittest.mock import patch
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        with patch("rawgentic_memory.adapter.check_text", side_effect=RuntimeError("boom")):
+            issues = adapter.fact_check("anything")
+        assert issues == []
+
+    def test_fact_check_maps_similar_name_format(self):
+        from unittest.mock import patch
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        fake_upstream = [{
+            "type": "similar_name",
+            "detail": "'Mlls' mentioned — did you mean 'Milla'? (edit distance 2)",
+            "names": ["Mlls", "Milla"],
+            "distance": 2,
+        }]
+        with patch("rawgentic_memory.adapter.check_text", return_value=fake_upstream):
+            issues = adapter.fact_check("Mlls said hi")
+        assert len(issues) == 1
+        assert issues[0].type == "similar_name"
+        assert "Mlls" in issues[0].detail

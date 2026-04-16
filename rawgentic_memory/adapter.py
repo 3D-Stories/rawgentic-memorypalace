@@ -15,6 +15,11 @@ try:
 except ImportError:
     search_memories = None
 
+try:
+    from mempalace.fact_checker import check_text
+except ImportError:
+    check_text = None
+
 
 @dataclass
 class HealthStatus:
@@ -41,6 +46,14 @@ class SearchResult:
     timestamp: str = ""
     source_file: str = ""
     flag: str | None = None
+
+
+@dataclass
+class FactIssue:
+    type: str  # similar_name | relationship_mismatch | stale_fact
+    detail: str
+    entity: str = ""
+    span: str = ""
 
 
 class MempalaceAdapter:
@@ -128,6 +141,45 @@ class MempalaceAdapter:
         except Exception as e:
             logger.warning("search failed: %s", e)
             return []
+
+    def fact_check(self, text: str) -> list[FactIssue]:
+        try:
+            if check_text is None:
+                return []
+            raw_issues = check_text(text, palace_path=self.palace_path)
+            return [
+                FactIssue(
+                    type=i.get("type", "unknown"),
+                    detail=i.get("detail", ""),
+                    entity=i.get("entity", ""),
+                    span=i.get("span", ""),
+                )
+                for i in raw_issues
+            ]
+        except Exception as e:
+            logger.warning("fact_check failed: %s", e)
+            return []
+
+    def canary_write(self, fact: str) -> bool:
+        """Test-only: write a canary fact to the 'canary' wing.
+        Maintains the 'all writes go through adapter' invariant."""
+        try:
+            from mempalace.miner import add_drawer
+            from mempalace.palace import get_collection
+            col = get_collection(self.palace_path, create=True)
+            add_drawer(
+                col,
+                wing="canary",
+                room="canary",
+                content=fact,
+                source_file="canary.test",
+                chunk_index=0,
+                agent="canary_write",
+            )
+            return True
+        except Exception as e:
+            logger.warning("canary_write failed: %s", e)
+            return False
 
     def _search_via_cli(
         self,
