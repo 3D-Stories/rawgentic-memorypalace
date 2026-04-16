@@ -33,6 +33,8 @@ class MempalaceAdapter:
             from mempalace.version import __version__ as mempalace_version
             if not os.path.isdir(self.palace_path):
                 return HealthStatus(available=False, doc_count=0)
+            # create=True: get_collection(create=False) raises on empty palace dirs.
+            # Side-effect (mkdir + get_or_create_collection) is acceptable for health.
             col = get_collection(self.palace_path, create=True)
             return HealthStatus(
                 available=True,

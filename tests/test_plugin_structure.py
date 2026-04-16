@@ -98,7 +98,7 @@ class TestPyprojectDependencies:
         data = self._load_pyproject()
         deps = data["project"]["dependencies"]
         mempalace_dep = [d for d in deps if d.startswith("mempalace")][0]
-        assert ">=3.0.0" in mempalace_dep, "mempalace must be pinned to >=3.0.0"
+        assert ">=3.3.0" in mempalace_dep, "mempalace must be pinned to >=3.3.0"
         assert "<4.0" in mempalace_dep or "<4" in mempalace_dep, (
             "mempalace must have upper bound <4.0"
         )
