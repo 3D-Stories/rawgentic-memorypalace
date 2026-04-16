@@ -126,3 +126,31 @@ class TestDiagnostic:
         assert "uptime_seconds" in data
         assert isinstance(data["contract_violations"], list)
         assert data["uptime_seconds"] >= 0
+
+
+class TestCanaryWrite:
+    def test_canary_write_succeeds_for_canary_wing(self, client):
+        """POST /canary_write with wing=canary calls adapter.canary_write."""
+        from unittest.mock import patch
+
+        with patch.object(
+            client.app.state.adapter, "canary_write", return_value=True
+        ) as mock_cw:
+            resp = client.post(
+                "/canary_write",
+                json={"wing": "canary", "fact": "test canary fact"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        mock_cw.assert_called_once_with("test canary fact")
+
+    def test_canary_write_rejects_non_canary_wing(self, client):
+        """POST /canary_write with wing != canary returns 403."""
+        resp = client.post(
+            "/canary_write",
+            json={"wing": "production", "fact": "should not write"},
+        )
+        assert resp.status_code == 403
+        data = resp.json()
+        assert "canary" in data["detail"].lower()

@@ -152,6 +152,24 @@ def build_app(
             "idle_seconds": round(idle, 2),
         })
 
+    @app.post("/canary_write")
+    async def canary_write(request: Request):
+        body = _parse_body(await request.body())
+        wing = body.get("wing", "")
+        fact = body.get("fact", "")
+        if wing != "canary":
+            return JSONResponse(
+                {"error": "Forbidden", "detail": "canary_write is gated to canary wing only"},
+                status_code=403,
+            )
+        if not fact:
+            return JSONResponse(
+                {"error": "Bad Request", "detail": "Missing 'fact' field"},
+                status_code=400,
+            )
+        ok = adapter.canary_write(fact)
+        return JSONResponse({"ok": ok})
+
     # --- 410 Gone: removed endpoints ---
 
     @app.api_route("/ingest", methods=["GET", "POST"])
