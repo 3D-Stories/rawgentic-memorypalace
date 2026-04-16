@@ -62,3 +62,28 @@ class TestSearch:
         # Only the high-similarity result should appear in the context
         assert "high" in data["additionalContext"]
         assert "low" not in data["additionalContext"]
+
+
+class TestWakeup:
+    def test_wakeup_returns_context(self, client):
+        """GET /wakeup returns wakeup context from adapter."""
+        resp = client.get("/wakeup")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "text" in data
+        assert "tokens" in data
+        assert "layers" in data
+
+    def test_wakeup_with_project_param(self, client):
+        """GET /wakeup?project=foo passes project to adapter."""
+        from unittest.mock import patch
+        from rawgentic_memory.adapter import WakeupContext
+
+        fake = WakeupContext(text="project context", tokens=10, layers=["L0", "L1"])
+        with patch.object(
+            client.app.state.adapter, "wakeup", return_value=fake
+        ) as mock_wakeup:
+            resp = client.get("/wakeup?project=myproj")
+        mock_wakeup.assert_called_once_with(project="myproj")
+        data = resp.json()
+        assert data["text"] == "project context"

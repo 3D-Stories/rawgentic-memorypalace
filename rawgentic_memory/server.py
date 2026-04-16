@@ -111,6 +111,11 @@ def build_app(
             lines.append("")
         return JSONResponse({"additionalContext": "\n".join(lines).strip()})
 
+    @app.get("/wakeup")
+    async def wakeup(project: str = Query(default="", max_length=128)):
+        ctx = adapter.wakeup(project=project or None)
+        return JSONResponse(asdict(ctx))
+
     # --- 410 Gone: removed endpoints ---
 
     @app.api_route("/ingest", methods=["GET", "POST"])
