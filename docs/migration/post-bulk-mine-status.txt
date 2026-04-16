@@ -1,0 +1,80 @@
+
+=======================================================
+  MemPalace Status — 18901 drawers
+=======================================================
+
+  WING: 2024_2025_taxes
+    ROOM: documentation          173 drawers
+    ROOM: general                  1 drawers
+
+  WING: ai_coding_presentation
+    ROOM: documentation           37 drawers
+    ROOM: general                  1 drawers
+
+  WING: arc
+    ROOM: documentation          101 drawers
+    ROOM: general                  1 drawers
+
+  WING: chorestory
+    ROOM: documentation        10018 drawers
+    ROOM: general                  1 drawers
+
+  WING: chorestory_business
+    ROOM: documentation          114 drawers
+    ROOM: general                  1 drawers
+
+  WING: chorestory_homepage
+    ROOM: general                  3 drawers
+
+  WING: clawd
+    ROOM: documentation          462 drawers
+    ROOM: general                  1 drawers
+
+  WING: daimonia
+    ROOM: documentation          273 drawers
+    ROOM: general                  1 drawers
+
+  WING: grocusave
+    ROOM: documentation         1554 drawers
+    ROOM: research                24 drawers
+    ROOM: general                  1 drawers
+
+  WING: jiro
+    ROOM: general                  5 drawers
+
+  WING: millions
+    ROOM: documentation         2704 drawers
+    ROOM: general                  1 drawers
+
+  WING: nillerkgames
+    ROOM: documentation            4 drawers
+    ROOM: general                  1 drawers
+
+  WING: rawgentic
+    ROOM: documentation         1307 drawers
+    ROOM: general                  1 drawers
+
+  WING: rawgentic_memorypalace
+    ROOM: documentation          273 drawers
+    ROOM: general                  4 drawers
+
+  WING: session_notes
+    ROOM: decision                34 drawers
+    ROOM: milestone               28 drawers
+    ROOM: problem                 26 drawers
+    ROOM: emotional               18 drawers
+    ROOM: _registry               15 drawers
+
+  WING: snowgate
+    ROOM: documentation           19 drawers
+    ROOM: general                  1 drawers
+
+  WING: sysop
+    ROOM: documentation         1690 drawers
+    ROOM: general                  1 drawers
+
+  WING: transcribe
+    ROOM: general                  2 drawers
+
+=======================================================
+

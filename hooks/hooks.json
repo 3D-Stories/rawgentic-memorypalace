@@ -2,7 +2,6 @@
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume|compact",
         "hooks": [
           {
             "type": "command",
@@ -23,13 +22,14 @@
         ]
       }
     ],
-    "Stop": [
+    "PostToolUse": [
       {
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "'${CLAUDE_PLUGIN_ROOT}/hooks/stop'",
-            "timeout": 10
+            "command": "'${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use'",
+            "timeout": 5
           }
         ]
       }

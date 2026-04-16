@@ -1,84 +1,74 @@
-"""FastAPI memory server with lazy-start support and idle timeout.
+"""Slim FastAPI server — routes all operations through MempalaceAdapter.
 
+Single-process gatekeeper (ChromaDB multi-process access is unsafe).
 Run via: python3 -m rawgentic_memory.server --port 8420 --timeout 14400
 """
-
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import time
-from collections import OrderedDict
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
-from rawgentic_memory.models import IngestResult, SessionData, WakeupContext
+from rawgentic_memory.adapter import MempalaceAdapter
 
 logger = logging.getLogger(__name__)
 
-_INGEST_OFFSET_MAX_ENTRIES = 512
-_KG_HISTORICAL_DEMOTION = 0.5
-
-# Endpoints excluded from idle timeout tracking — monitoring calls
+# Endpoints excluded from idle-timeout tracking — monitoring calls
 # should not keep the server alive.
-_MONITORING_PATHS = frozenset({"/healthz", "/stats"})
+_MONITORING_PATHS = frozenset({"/healthz", "/diagnostic"})
 
 
-# --- Request/response models for FastAPI validation ---
-
-class IngestRequest(BaseModel):
-    session_id: str
-    project: str
-    notes: str
-    source: str
-    timestamp: str
-    source_file: str = ""
-
-
-class SearchRequest(BaseModel):
-    query: str
-    project: str | None = None
-    memory_type: str | None = None
-    limit: int = 10
+def _parse_body(raw: bytes) -> dict:
+    """Tolerant JSON parser — returns {} on malformed body instead of 500."""
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return {}
 
 
-class ReindexRequest(BaseModel):
-    source_dirs: list[str]
-
-
-class InvalidateRequest(BaseModel):
-    subject: str
-    predicate: str
-    object: str
-
-
-def create_app(
+def build_app(
+    palace_path: str | None = None,
     idle_timeout: int = 14400,
-    backend=None,
-    l0_path: str | None = None,
 ) -> FastAPI:
-    """Create and configure the FastAPI application.
+    """Create and configure the slim FastAPI application.
 
     Args:
-        idle_timeout: Seconds of inactivity before the server shuts down.
-                      Default 14400 (4 hours). Set to 0 to disable.
-        backend: Memory backend instance. If None, data endpoints return 503.
-        l0_path: Path to the L0 identity file for /wakeup. If None, L0 is skipped.
+        palace_path: Path to the mempalace palace directory.
+        idle_timeout: Seconds of inactivity before auto-shutdown. 0 to disable.
     """
-    app = FastAPI(title="rawgentic-memorypalace", docs_url=None, redoc_url=None)
-    app.state.start_time = time.monotonic()
-    app.state.last_activity = time.monotonic()
-    app.state.idle_timeout = idle_timeout
-    app.state.server = None  # Set by run_server() for programmatic shutdown
-    app.state.backend = backend
-    app.state.l0_path = l0_path
-    # Offset-based incremental ingest: tracks byte position per (project:session_id)
-    app.state.ingest_offsets: OrderedDict[str, int] = OrderedDict()
-    app.state.ingest_locks: dict[str, asyncio.Lock] = {}
+    adapter = MempalaceAdapter(palace_path=palace_path)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        app.state.adapter = adapter
+        app.state.start_time = time.monotonic()
+        app.state.last_activity = time.monotonic()
+        app.state.idle_timeout = idle_timeout
+        app.state.server = None  # set by run_server() for programmatic shutdown
+        # Run behavioral contract probe at startup (non-blocking warnings)
+        violations = adapter.verify_behavioral_contract()
+        for v in violations:
+            logger.warning("contract violation: %s — expected %s, got %s",
+                           v.field, v.expected, v.actual)
+        yield
+
+    app = FastAPI(
+        title="rawgentic-memorypalace",
+        docs_url=None,
+        redoc_url=None,
+        lifespan=lifespan,
+    )
+
+    # --- Middleware ---
 
     @app.middleware("http")
     async def track_activity(request: Request, call_next):
@@ -87,184 +77,126 @@ def create_app(
             request.app.state.last_activity = time.monotonic()
         return response
 
+    # --- Endpoints ---
+
     @app.get("/healthz")
     async def healthz():
-        uptime = time.monotonic() - app.state.start_time
-        mp_available = False
-        if app.state.backend is not None:
-            mp_available = app.state.backend.stats().available
-        return JSONResponse({
-            "status": "ok",
-            "uptime": round(uptime, 2),
-            "backends": {
-                "mempalace": mp_available,
-            },
-        })
-
-    @app.get("/stats")
-    async def stats():
-        mp_stats = {"doc_count": 0, "available": False}
-        last_ingest = None
-        index_size_bytes = 0
-        if app.state.backend is not None:
-            bs = app.state.backend.stats()
-            mp_stats = {"doc_count": bs.doc_count, "available": bs.available}
-            last_ingest = bs.last_ingest
-            index_size_bytes = bs.index_size_bytes
-        return JSONResponse({
-            "backends": {
-                "mempalace": mp_stats,
-            },
-            "last_ingest": last_ingest,
-            "index_size_bytes": index_size_bytes,
-        })
-
-    @app.post("/ingest")
-    async def ingest(req: IngestRequest):
-        if app.state.backend is None:
-            return JSONResponse(
-                {"error": "No backend available"},
-                status_code=503,
-            )
-
-        # Empty notes — nothing to process
-        if not req.notes or not req.notes.strip():
-            return JSONResponse(asdict(IngestResult(indexed=0, skipped=1)))
-
-        # Offset-based incremental processing
-        offset_key = f"{req.project}:{req.session_id}"
-
-        # Per-key lock to prevent TOCTOU races under concurrent triggers.
-        # setdefault is atomic under CPython's GIL, avoiding a check-then-create race.
-        lock = app.state.ingest_locks.setdefault(offset_key, asyncio.Lock())
-
-        async with lock:
-            last_offset = app.state.ingest_offsets.get(offset_key, 0)
-            content_len = len(req.notes)
-
-            # Content not longer than last ingest — skip
-            if content_len <= last_offset:
-                return JSONResponse(asdict(IngestResult(indexed=0, skipped=1)))
-
-            # Extract only the new delta
-            new_content = req.notes[last_offset:]
-
-            data = SessionData(
-                session_id=req.session_id,
-                project=req.project,
-                notes=new_content,
-                source=req.source,
-                timestamp=req.timestamp,
-                source_file=req.source_file,
-            )
-            result = app.state.backend.ingest(data)
-
-            # Update offset and enforce LRU cap.
-            # Eviction causes full re-ingest on next call for that key,
-            # which is safe because ChromaDB upsert deduplicates by doc ID.
-            app.state.ingest_offsets[offset_key] = content_len
-            app.state.ingest_offsets.move_to_end(offset_key)
-            while len(app.state.ingest_offsets) > _INGEST_OFFSET_MAX_ENTRIES:
-                evicted_key, _ = app.state.ingest_offsets.popitem(last=False)
-                app.state.ingest_locks.pop(evicted_key, None)
-
-        return JSONResponse(asdict(result))
+        h = adapter.health()
+        return JSONResponse(asdict(h))
 
     @app.post("/search")
-    async def search(req: SearchRequest):
-        if app.state.backend is None:
-            return JSONResponse(
-                {"error": "No backend available"},
-                status_code=503,
-            )
-        results = app.state.backend.search(
-            query=req.query,
-            project=req.project,
-            memory_type=req.memory_type,
-            limit=req.limit,
-        )
-
-        # AC5: Demote invalidated decisions in search results
-        if results and hasattr(app.state.backend, "get_invalidated_decisions"):
-            # Collect unique projects from decision-type results
-            projects = {r.project for r in results if r.memory_type == "decision"}
-            invalidated: set[str] = set()
-            for proj in projects:
-                try:
-                    invalidated |= app.state.backend.get_invalidated_decisions(proj)
-                except Exception:
-                    logger.warning("KG demotion lookup failed for %s", proj, exc_info=True)
-            # Apply demotion and re-sort
-            if invalidated:
-                for r in results:
-                    if r.memory_type == "decision" and r.content in invalidated:
-                        r.similarity = round(r.similarity * _KG_HISTORICAL_DEMOTION, 4)
-                results.sort(key=lambda r: r.similarity, reverse=True)
-
-        return JSONResponse({"results": [asdict(r) for r in results]})
-
-    @app.post("/reindex")
-    async def reindex(req: ReindexRequest):
-        if app.state.backend is None:
-            return JSONResponse(
-                {"error": "No backend available"},
-                status_code=503,
-            )
-        result = app.state.backend.reindex(req.source_dirs)
-        return JSONResponse(asdict(result))
+    async def search(request: Request):
+        body = _parse_body(await request.body())
+        prompt = body.get("prompt", "")
+        if not prompt:
+            return JSONResponse({"additionalContext": ""})
+        min_similarity = float(body.get("min_similarity", 0.3))
+        limit = int(body.get("limit", 10))
+        results = adapter.search(query=prompt, limit=limit)
+        # Filter by similarity threshold
+        results = [r for r in results if r.similarity >= min_similarity]
+        if not results:
+            return JSONResponse({"additionalContext": ""})
+        # Format as structured context for hook injection
+        lines: list[str] = []
+        for r in results:
+            header = f"[{r.memory_type or 'memory'}]"
+            if r.topic:
+                header += f" ({r.topic})"
+            header += f" sim={r.similarity:.2f}"
+            if r.project:
+                header += f" project={r.project}"
+            lines.append(header)
+            lines.append(r.content)
+            lines.append("")
+        return JSONResponse({"additionalContext": "\n".join(lines).strip()})
 
     @app.get("/wakeup")
     async def wakeup(project: str = Query(default="", max_length=128)):
-        if app.state.backend is not None and hasattr(app.state.backend, "wakeup"):
-            ctx = app.state.backend.wakeup(
-                project=project or None,
-                l0_path=app.state.l0_path,
-            )
-        else:
-            ctx = WakeupContext(text="", tokens=0, layers=[], backend="mempalace")
+        ctx = adapter.wakeup(project=project or None)
         return JSONResponse(asdict(ctx))
 
-    # --- Knowledge Graph endpoints ---
+    @app.post("/fact_check")
+    async def fact_check(request: Request):
+        body = _parse_body(await request.body())
+        # Support multiple text locations: direct "text", or nested tool_input
+        text = body.get("text", "")
+        if not text:
+            tool_input = body.get("tool_input", {})
+            text = tool_input.get("content", "") or tool_input.get("new_string", "")
+        if not text:
+            return JSONResponse({"additionalContext": ""})
+        issues = adapter.fact_check(text)
+        if not issues:
+            return JSONResponse({"additionalContext": ""})
+        lines: list[str] = []
+        for issue in issues:
+            line = f"[{issue.type}]"
+            if issue.entity:
+                line += f" entity={issue.entity}"
+            line += f" {issue.detail}"
+            lines.append(line)
+        return JSONResponse({"additionalContext": "\n".join(lines)})
 
-    @app.post("/kg/invalidate")
-    async def kg_invalidate(req: InvalidateRequest):
-        if app.state.backend is None:
+    @app.get("/diagnostic")
+    async def diagnostic():
+        h = adapter.health()
+        violations = adapter.verify_behavioral_contract()
+        now = time.monotonic()
+        uptime = now - app.state.start_time
+        idle = now - app.state.last_activity
+        return JSONResponse({
+            "health": asdict(h),
+            "contract_violations": [asdict(v) for v in violations],
+            "uptime_seconds": round(uptime, 2),
+            "idle_seconds": round(idle, 2),
+        })
+
+    @app.post("/canary_write")
+    async def canary_write(request: Request):
+        body = _parse_body(await request.body())
+        wing = body.get("wing", "")
+        fact = body.get("fact", "")
+        if wing != "canary":
             return JSONResponse(
-                {"error": "No backend available"},
-                status_code=503,
+                {"error": "Forbidden", "detail": "canary_write is gated to canary wing only"},
+                status_code=403,
             )
-        result = app.state.backend.invalidate_triple(
-            subject=req.subject,
-            predicate=req.predicate,
-            obj=req.object,
+        if not fact:
+            return JSONResponse(
+                {"error": "Bad Request", "detail": "Missing 'fact' field"},
+                status_code=400,
+            )
+        ok = adapter.canary_write(fact)
+        return JSONResponse({"ok": ok})
+
+    # --- 410 Gone: removed endpoints ---
+
+    @app.api_route("/ingest", methods=["GET", "POST"])
+    async def gone_ingest():
+        return JSONResponse(
+            {"error": "Removed", "detail": "Use mempalace's native Save Hook"},
+            status_code=410,
         )
-        return JSONResponse(result)
 
-    @app.get("/kg/entity")
-    async def kg_entity(
-        name: str = Query(...),
-        as_of: str | None = Query(default=None),
-    ):
-        if app.state.backend is None:
-            return JSONResponse(
-                {"error": "No backend available"},
-                status_code=503,
-            )
-        triples = app.state.backend.query_entity(name, as_of=as_of)
-        return JSONResponse({"triples": triples})
+    @app.api_route("/reindex", methods=["GET", "POST"])
+    async def gone_reindex():
+        return JSONResponse(
+            {"error": "Removed", "detail": "Use mempalace mine CLI directly"},
+            status_code=410,
+        )
 
-    @app.get("/kg/timeline")
-    async def kg_timeline(entity: str = Query(...)):
-        if app.state.backend is None:
-            return JSONResponse(
-                {"error": "No backend available"},
-                status_code=503,
-            )
-        timeline = app.state.backend.get_timeline(entity)
-        return JSONResponse({"timeline": timeline})
+    @app.api_route("/kg/{path:path}", methods=["GET", "POST"])
+    async def gone_kg(path: str = ""):
+        return JSONResponse(
+            {"error": "Removed", "detail": "Use MCP tools directly"},
+            status_code=410,
+        )
 
     return app
 
+
+# --- Server entrypoint ---
 
 async def _idle_watcher(app: FastAPI, check_interval: int = 60) -> None:
     """Background task that shuts down the server after idle timeout."""
@@ -284,7 +216,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--host", type=str, default="127.0.0.1",
-        help="Host to bind to (default: 127.0.0.1, use 0.0.0.0 for Docker)",
+        help="Host to bind to (default: 127.0.0.1)",
     )
     parser.add_argument(
         "--port", type=int, default=8420,
@@ -292,11 +224,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--timeout", type=int, default=14400,
-        help="Idle timeout in seconds before auto-shutdown (default: 14400 = 4h, 0 to disable)",
-    )
-    parser.add_argument(
-        "--l0-path", type=str, default=None,
-        help="Path to L0 identity file for /wakeup (default: None, L0 layer skipped)",
+        help="Idle timeout in seconds (default: 14400 = 4h, 0 to disable)",
     )
     return parser.parse_args(argv)
 
@@ -305,21 +233,11 @@ def run_server(
     host: str = "127.0.0.1",
     port: int = 8420,
     idle_timeout: int = 14400,
-    l0_path: str | None = None,
 ) -> None:
     """Start the server with idle timeout watcher."""
     import uvicorn
 
-    backend = None
-    try:
-        from rawgentic_memory.mempalace_backend import MemPalaceBackend, MEMPALACE_AVAILABLE
-
-        if MEMPALACE_AVAILABLE:
-            backend = MemPalaceBackend()
-    except Exception:
-        pass
-
-    app = create_app(idle_timeout=idle_timeout, backend=backend, l0_path=l0_path)
+    app = build_app(idle_timeout=idle_timeout)
     config = uvicorn.Config(
         app,
         host=host,
@@ -339,4 +257,4 @@ def run_server(
 
 if __name__ == "__main__":
     args = _parse_args()
-    run_server(host=args.host, port=args.port, idle_timeout=args.timeout, l0_path=args.l0_path)
+    run_server(host=args.host, port=args.port, idle_timeout=args.timeout)

@@ -1,0 +1,9 @@
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+Failed to send telemetry event CollectionGetEvent: capture() takes 1 positional argument but 3 were given
+
+=======================================================
+  MemPalace Status — 0 drawers
+=======================================================
+
+=======================================================
+

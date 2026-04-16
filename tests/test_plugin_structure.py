@@ -63,21 +63,25 @@ class TestHooksJson:
         with open(path) as f:
             data = json.load(f)
         hooks = data["hooks"]
-        for event in ("SessionStart", "UserPromptSubmit", "Stop"):
+        # Bridge hooks (read-only HTTP calls). Stop + PreCompact are handled
+        # by mempalace's native hooks installed in ~/.claude/settings.json,
+        # not by this plugin — hence absent here by design.
+        for event in ("SessionStart", "UserPromptSubmit", "PostToolUse"):
             assert event in hooks, f"hooks.json missing event: {event}"
 
-    def test_session_start_covers_compact(self):
-        """SessionStart matcher must include 'compact' for PreCompact behavior."""
+    def test_post_tool_use_matches_edit_write(self):
+        """PostToolUse (Layer 4 fact-check) only fires on Edit/Write/MultiEdit."""
         path = PROJECT_ROOT / "hooks" / "hooks.json"
         with open(path) as f:
             data = json.load(f)
-        session_start = data["hooks"]["SessionStart"]
+        post_tool_use = data["hooks"]["PostToolUse"]
         matchers = " ".join(
-            entry.get("matcher", "") for entry in session_start
+            entry.get("matcher", "") for entry in post_tool_use
         )
-        assert "compact" in matchers, (
-            "SessionStart must have a matcher that includes 'compact' for PreCompact"
-        )
+        for tool in ("Edit", "Write", "MultiEdit"):
+            assert tool in matchers, (
+                f"PostToolUse matcher missing '{tool}'"
+            )
 
 
 class TestPyprojectDependencies:
@@ -98,7 +102,7 @@ class TestPyprojectDependencies:
         data = self._load_pyproject()
         deps = data["project"]["dependencies"]
         mempalace_dep = [d for d in deps if d.startswith("mempalace")][0]
-        assert ">=3.0.0" in mempalace_dep, "mempalace must be pinned to >=3.0.0"
+        assert ">=3.3.0" in mempalace_dep, "mempalace must be pinned to >=3.3.0"
         assert "<4.0" in mempalace_dep or "<4" in mempalace_dep, (
             "mempalace must have upper bound <4.0"
         )

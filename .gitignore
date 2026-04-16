@@ -6,3 +6,5 @@ build/
 .venv/
 *.egg
 .pytest_cache/
+*.old-backup
+.coverage

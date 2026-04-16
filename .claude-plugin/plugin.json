@@ -21,7 +21,7 @@
     "mempalace": {
       "command": "python",
       "args": ["-m", "mempalace.mcp_server"],
-      "description": "MemPalace MCP server — direct access to palace search, wake-up, diary, and KG tools"
+      "description": "MemPalace MCP server. Requires mempalace to be importable from the Python on PATH. Simplest install: `pip install --user mempalace`. For isolated installs via pipx, add a user-level override via `claude mcp add -s user mempalace -- <pipx-venv>/bin/python -m mempalace.mcp_server`."
     }
   }
 }
