@@ -19,9 +19,9 @@
   ],
   "mcpServers": {
     "mempalace": {
-      "command": "python",
-      "args": ["-m", "mempalace.mcp_server"],
-      "description": "MemPalace MCP server — direct access to palace search, wake-up, diary, and KG tools"
+      "command": "mempalace",
+      "args": ["mcp"],
+      "description": "MemPalace MCP server. Requires `pipx install mempalace` (or equivalent) so the `mempalace` CLI is on PATH."
     }
   }
 }
