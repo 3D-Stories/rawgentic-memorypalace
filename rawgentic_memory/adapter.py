@@ -22,6 +22,14 @@ except ImportError:
 
 
 @dataclass
+class ContractViolation:
+    field: str
+    expected: str
+    actual: str
+    severity: str = "warning"  # info | warning | error
+
+
+@dataclass
 class HealthStatus:
     available: bool
     doc_count: int
@@ -60,6 +68,19 @@ class MempalaceAdapter:
     CONTRACT_VERSION = 3
     MIN_VERSION = "3.3.0"
     MAX_VERSION = "4.0.0"
+    BEHAVIORAL_CONTRACT = {
+        "expected_mcp_tools": [
+            "mempalace_search",
+            "mempalace_add_drawer",
+            "mempalace_diary_write",
+            "mempalace_kg_query",
+            "mempalace_kg_add",
+            "mempalace_kg_invalidate",
+        ],
+        "expected_save_interval": 15,
+        "expected_palace_dir": "~/.mempalace/palace",
+        "expected_kg_path": "~/.mempalace/knowledge_graph.sqlite3",
+    }
     MAX_CONTENT_CHARS_PER_RESULT = 1500
     TRUNCATION_MARKER = "... [truncated]"
     # -5: conservative pad for Unicode multi-byte chars counted differently by callers
@@ -180,6 +201,70 @@ class MempalaceAdapter:
         except Exception as e:
             logger.warning("canary_write failed: %s", e)
             return False
+
+    @staticmethod
+    def _parse_version(vs: str) -> tuple[int, ...]:
+        """Parse semver as tuple of ints. Critical: never compare versions as strings.
+        '3.10.0' < '3.3.0' returns True lexically — wrong."""
+        return tuple(int(x) for x in vs.split(".") if x.isdigit())
+
+    def verify_behavioral_contract(self) -> list[ContractViolation]:
+        """Probe the mempalace installation for compatibility violations.
+
+        Returns a list of ContractViolation; empty list means all checks passed.
+        Gracefully degrades: unreachable modules are caught, not crashed on.
+        """
+        violations: list[ContractViolation] = []
+        try:
+            import mempalace  # noqa: F401
+        except ImportError:
+            violations.append(ContractViolation(
+                field="mempalace_module",
+                expected="importable",
+                actual="ImportError",
+                severity="error",
+            ))
+            return violations
+
+        # Check version bounds (tuple comparison, NOT string comparison)
+        try:
+            from mempalace.version import __version__ as v
+            v_tuple = self._parse_version(v)
+            min_tuple = self._parse_version(self.MIN_VERSION)
+            max_tuple = self._parse_version(self.MAX_VERSION)
+            if v_tuple < min_tuple:
+                violations.append(ContractViolation(
+                    field="mempalace_version",
+                    expected=f">={self.MIN_VERSION}",
+                    actual=v,
+                    severity="error",
+                ))
+            if v_tuple >= max_tuple:
+                violations.append(ContractViolation(
+                    field="mempalace_version",
+                    expected=f"<{self.MAX_VERSION}",
+                    actual=v,
+                    severity="warning",
+                ))
+        except Exception:
+            pass
+
+        # Check expected MCP tools are exposed by mempalace
+        try:
+            from mempalace import mcp_server as _mcp
+            available_tools = set(getattr(_mcp, "TOOLS", {}).keys())
+            for tool_name in self.BEHAVIORAL_CONTRACT.get("expected_mcp_tools", []):
+                if tool_name not in available_tools:
+                    violations.append(ContractViolation(
+                        field=f"mcp_tool:{tool_name}",
+                        expected="present",
+                        actual="missing",
+                        severity="warning",
+                    ))
+        except Exception:
+            pass
+
+        return violations
 
     def _search_via_cli(
         self,

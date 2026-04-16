@@ -1,6 +1,13 @@
 """Tests for MempalaceAdapter — versioned wrapper around mempalace."""
 import pytest
-from rawgentic_memory.adapter import MempalaceAdapter, HealthStatus, WakeupContext, SearchResult, FactIssue
+from rawgentic_memory.adapter import (
+    MempalaceAdapter,
+    HealthStatus,
+    WakeupContext,
+    SearchResult,
+    FactIssue,
+    ContractViolation,
+)
 
 
 class TestHealth:
@@ -224,3 +231,62 @@ class TestCanaryWrite:
         with patch("mempalace.palace.get_collection", side_effect=RuntimeError("boom")):
             result = adapter.canary_write("test fact")
         assert result is False
+
+
+class TestVersionValidation:
+    def test_min_version_constant(self):
+        assert MempalaceAdapter.MIN_VERSION == "3.3.0"
+
+    def test_max_version_constant(self):
+        assert MempalaceAdapter.MAX_VERSION == "4.0.0"
+
+    def test_contract_version_constant(self):
+        assert MempalaceAdapter.CONTRACT_VERSION == 3
+
+
+class TestBehavioralContract:
+    def test_verify_returns_list(self, isolated_palace):
+        adapter = MempalaceAdapter(palace_path=str(isolated_palace))
+        violations = adapter.verify_behavioral_contract()
+        assert isinstance(violations, list)
+
+    def test_verify_handles_missing_mempalace(self, mock_mempalace_unavailable, tmp_path):
+        adapter = MempalaceAdapter(palace_path=str(tmp_path))
+        violations = adapter.verify_behavioral_contract()
+        assert any(v.field == "mempalace_module" for v in violations)
+
+    def test_behavioral_contract_lists_expected_mcp_tools(self):
+        tools = MempalaceAdapter.BEHAVIORAL_CONTRACT["expected_mcp_tools"]
+        assert "mempalace_search" in tools
+        assert "mempalace_add_drawer" in tools
+        assert "mempalace_diary_write" in tools
+
+    def test_verify_detects_missing_mcp_tool(self, isolated_palace, monkeypatch):
+        import sys
+        import mempalace
+        import mempalace.mcp_server  # force submodule into parent's __dict__  # noqa: F401
+        from unittest.mock import MagicMock
+        fake_mcp = MagicMock()
+        # Only expose mempalace_search — everything else should be flagged missing
+        fake_mcp.TOOLS = {"mempalace_search": object()}
+        # Replace both the sys.modules entry and the parent's attr so that
+        # `from mempalace import mcp_server` resolves to our fake.
+        monkeypatch.setitem(sys.modules, "mempalace.mcp_server", fake_mcp)
+        monkeypatch.setattr(mempalace, "mcp_server", fake_mcp)
+        adapter = MempalaceAdapter(palace_path=str(isolated_palace))
+        violations = adapter.verify_behavioral_contract()
+        missing_fields = [v.field for v in violations]
+        assert "mcp_tool:mempalace_add_drawer" in missing_fields
+
+
+class TestVersionComparison:
+    """Critical: never compare semver as Python strings.
+    '3.10.0' < '3.3.0' returns True lexically — wrong."""
+
+    def test_parse_version_returns_tuple(self):
+        assert MempalaceAdapter._parse_version("3.3.0") == (3, 3, 0)
+        assert MempalaceAdapter._parse_version("3.10.0") == (3, 10, 0)
+
+    def test_tuple_comparison_correct_for_double_digit_minor(self):
+        assert MempalaceAdapter._parse_version("3.10.0") > MempalaceAdapter._parse_version("3.3.0")
+        assert MempalaceAdapter._parse_version("3.3.10") > MempalaceAdapter._parse_version("3.3.2")
