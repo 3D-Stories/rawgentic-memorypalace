@@ -131,14 +131,9 @@ class TestMcpServerRegistration:
         assert "command" in server
         assert "args" in server
 
-    def test_mcp_server_uses_mempalace_cli(self):
+    def test_mcp_server_uses_mempalace_module(self):
         server = self._load_plugin()["mcpServers"]["mempalace"]
-        assert server["command"] == "mempalace", (
-            "plugin.json must use `mempalace` CLI (requires `pipx install mempalace`)"
-        )
-        assert server["args"] == ["mcp"], (
-            "plugin.json must invoke the `mcp` subcommand"
-        )
+        assert "mempalace.mcp_server" in " ".join(server.get("args", []))
 
     def test_description_no_dual_backends(self):
         data = self._load_plugin()
