@@ -138,6 +138,20 @@ def build_app(
             lines.append(line)
         return JSONResponse({"additionalContext": "\n".join(lines)})
 
+    @app.get("/diagnostic")
+    async def diagnostic():
+        h = adapter.health()
+        violations = adapter.verify_behavioral_contract()
+        now = time.monotonic()
+        uptime = now - app.state.start_time
+        idle = now - app.state.last_activity
+        return JSONResponse({
+            "health": asdict(h),
+            "contract_violations": [asdict(v) for v in violations],
+            "uptime_seconds": round(uptime, 2),
+            "idle_seconds": round(idle, 2),
+        })
+
     # --- 410 Gone: removed endpoints ---
 
     @app.api_route("/ingest", methods=["GET", "POST"])

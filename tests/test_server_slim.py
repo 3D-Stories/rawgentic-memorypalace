@@ -113,3 +113,16 @@ class TestFactCheck:
         mock_fc.assert_called_once_with("check this")
         data = resp.json()
         assert "did you mean X?" in data["additionalContext"]
+
+
+class TestDiagnostic:
+    def test_diagnostic_returns_health_and_uptime(self, client):
+        """GET /diagnostic returns health, contract violations, and uptime."""
+        resp = client.get("/diagnostic")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "health" in data
+        assert "contract_violations" in data
+        assert "uptime_seconds" in data
+        assert isinstance(data["contract_violations"], list)
+        assert data["uptime_seconds"] >= 0
