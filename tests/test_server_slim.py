@@ -87,3 +87,29 @@ class TestWakeup:
         mock_wakeup.assert_called_once_with(project="myproj")
         data = resp.json()
         assert data["text"] == "project context"
+
+
+class TestFactCheck:
+    def test_fact_check_returns_additional_context(self, client):
+        """POST /fact_check with text returns additionalContext."""
+        resp = client.post("/fact_check", json={"text": "some text to check"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "additionalContext" in data
+
+    def test_fact_check_extracts_text_from_tool_input(self, client):
+        """POST /fact_check supports tool_input.content and tool_input.new_string."""
+        from unittest.mock import patch
+        from rawgentic_memory.adapter import FactIssue
+
+        fake = [FactIssue(type="similar_name", detail="did you mean X?", entity="X")]
+        with patch.object(
+            client.app.state.adapter, "fact_check", return_value=fake
+        ) as mock_fc:
+            resp = client.post(
+                "/fact_check",
+                json={"tool_input": {"content": "check this"}},
+            )
+        mock_fc.assert_called_once_with("check this")
+        data = resp.json()
+        assert "did you mean X?" in data["additionalContext"]

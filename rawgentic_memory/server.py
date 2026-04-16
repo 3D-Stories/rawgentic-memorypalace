@@ -116,6 +116,28 @@ def build_app(
         ctx = adapter.wakeup(project=project or None)
         return JSONResponse(asdict(ctx))
 
+    @app.post("/fact_check")
+    async def fact_check(request: Request):
+        body = _parse_body(await request.body())
+        # Support multiple text locations: direct "text", or nested tool_input
+        text = body.get("text", "")
+        if not text:
+            tool_input = body.get("tool_input", {})
+            text = tool_input.get("content", "") or tool_input.get("new_string", "")
+        if not text:
+            return JSONResponse({"additionalContext": ""})
+        issues = adapter.fact_check(text)
+        if not issues:
+            return JSONResponse({"additionalContext": ""})
+        lines: list[str] = []
+        for issue in issues:
+            line = f"[{issue.type}]"
+            if issue.entity:
+                line += f" entity={issue.entity}"
+            line += f" {issue.detail}"
+            lines.append(line)
+        return JSONResponse({"additionalContext": "\n".join(lines)})
+
     # --- 410 Gone: removed endpoints ---
 
     @app.api_route("/ingest", methods=["GET", "POST"])
