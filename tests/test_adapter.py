@@ -1,6 +1,6 @@
 """Tests for MempalaceAdapter — versioned wrapper around mempalace."""
 import pytest
-from rawgentic_memory.adapter import MempalaceAdapter, HealthStatus, WakeupContext
+from rawgentic_memory.adapter import MempalaceAdapter, HealthStatus, WakeupContext, SearchResult
 
 
 class TestHealth:
@@ -47,3 +47,128 @@ class TestWakeup:
         assert ctx.text == ""
         assert ctx.tokens == 0
         assert ctx.layers == []
+
+
+class TestSearch:
+    def test_search_empty_palace_returns_empty_list(self, isolated_palace):
+        adapter = MempalaceAdapter(palace_path=str(isolated_palace))
+        results = adapter.search("anything")
+        assert results == []
+
+    def test_search_returns_empty_on_api_exception(self):
+        """search_memories raises -> catch path returns []."""
+        from unittest.mock import patch
+
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        with patch(
+            "rawgentic_memory.adapter.search_memories",
+            side_effect=RuntimeError("boom"),
+        ):
+            results = adapter.search("query")
+        assert results == []
+
+    def test_search_returns_empty_when_api_unavailable(self):
+        """search_memories is None (import failed) -> CLI fallback.
+
+        CLI fallback also fails (no --json) -> returns [].
+        """
+        from unittest.mock import patch
+
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        with patch("rawgentic_memory.adapter.search_memories", None):
+            results = adapter.search("query")
+        assert results == []
+
+    def test_search_filters_by_memory_type(self):
+        from unittest.mock import patch
+
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        fake_results = {
+            "results": [
+                {"text": "decision content", "wing": "p", "memory_type": "decision"},
+                {"text": "event content", "wing": "p", "memory_type": "event"},
+            ]
+        }
+        with patch(
+            "rawgentic_memory.adapter.search_memories", return_value=fake_results
+        ):
+            results = adapter.search("q", memory_type="decision")
+        assert len(results) == 1
+        assert results[0].memory_type == "decision"
+
+    def test_search_filters_by_flag(self):
+        from unittest.mock import patch
+
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        fake_results = {
+            "results": [
+                {"text": "flagged", "wing": "p", "flag": "important"},
+                {"text": "unflagged", "wing": "p"},
+            ]
+        }
+        with patch(
+            "rawgentic_memory.adapter.search_memories", return_value=fake_results
+        ):
+            results = adapter.search("q", flag="important")
+        assert len(results) == 1
+        assert results[0].flag == "important"
+
+    def test_search_truncates_long_content(self):
+        from unittest.mock import patch
+
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        long_text = "x" * 5000
+        fake_results = {"results": [{"text": long_text, "wing": "p"}]}
+        with patch(
+            "rawgentic_memory.adapter.search_memories", return_value=fake_results
+        ):
+            results = adapter.search("q")
+        assert len(results) == 1
+        assert len(results[0].content) <= adapter.MAX_CONTENT_CHARS_PER_RESULT
+        assert "[truncated]" in results[0].content
+
+    def test_search_preserves_short_content(self):
+        from unittest.mock import patch
+
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        short_text = "short content"
+        fake_results = {"results": [{"text": short_text, "wing": "p"}]}
+        with patch(
+            "rawgentic_memory.adapter.search_memories", return_value=fake_results
+        ):
+            results = adapter.search("q")
+        assert len(results) == 1
+        assert results[0].content == short_text
+
+    def test_search_maps_all_fields(self):
+        from unittest.mock import patch
+
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        fake_results = {
+            "results": [
+                {
+                    "text": "content here",
+                    "wing": "myproject",
+                    "room": "architecture",
+                    "source_file": "DECISIONS.md",
+                    "similarity": 0.85,
+                    "memory_type": "decision",
+                    "timestamp": "2025-01-15",
+                    "flag": "pinned",
+                }
+            ]
+        }
+        with patch(
+            "rawgentic_memory.adapter.search_memories", return_value=fake_results
+        ):
+            results = adapter.search("q")
+        assert len(results) == 1
+        r = results[0]
+        assert r.content == "content here"
+        assert r.project == "myproject"
+        assert r.topic == "architecture"
+        assert r.source_file == "DECISIONS.md"
+        assert r.similarity == 0.85
+        assert r.memory_type == "decision"
+        assert r.timestamp == "2025-01-15"
+        assert r.flag == "pinned"
