@@ -32,3 +32,33 @@ class TestHealthz:
         data = resp.json()
         assert "version" in data
         assert data["version"] != ""
+
+
+class TestSearch:
+    def test_search_returns_additional_context(self, client):
+        """POST /search with a prompt returns additionalContext string."""
+        resp = client.post("/search", json={"prompt": "test query"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "additionalContext" in data
+
+    def test_search_filters_by_similarity(self, client):
+        """Results below min_similarity are excluded."""
+        from unittest.mock import patch
+        from rawgentic_memory.adapter import SearchResult
+
+        fake = [
+            SearchResult(content="high", similarity=0.9),
+            SearchResult(content="low", similarity=0.1),
+        ]
+        with patch.object(
+            client.app.state.adapter, "search", return_value=fake
+        ):
+            resp = client.post(
+                "/search",
+                json={"prompt": "q", "min_similarity": 0.5},
+            )
+        data = resp.json()
+        # Only the high-similarity result should appear in the context
+        assert "high" in data["additionalContext"]
+        assert "low" not in data["additionalContext"]

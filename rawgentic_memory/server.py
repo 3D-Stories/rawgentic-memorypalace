@@ -84,6 +84,33 @@ def build_app(
         h = adapter.health()
         return JSONResponse(asdict(h))
 
+    @app.post("/search")
+    async def search(request: Request):
+        body = _parse_body(await request.body())
+        prompt = body.get("prompt", "")
+        if not prompt:
+            return JSONResponse({"additionalContext": ""})
+        min_similarity = float(body.get("min_similarity", 0.3))
+        limit = int(body.get("limit", 10))
+        results = adapter.search(query=prompt, limit=limit)
+        # Filter by similarity threshold
+        results = [r for r in results if r.similarity >= min_similarity]
+        if not results:
+            return JSONResponse({"additionalContext": ""})
+        # Format as structured context for hook injection
+        lines: list[str] = []
+        for r in results:
+            header = f"[{r.memory_type or 'memory'}]"
+            if r.topic:
+                header += f" ({r.topic})"
+            header += f" sim={r.similarity:.2f}"
+            if r.project:
+                header += f" project={r.project}"
+            lines.append(header)
+            lines.append(r.content)
+            lines.append("")
+        return JSONResponse({"additionalContext": "\n".join(lines).strip()})
+
     # --- 410 Gone: removed endpoints ---
 
     @app.api_route("/ingest", methods=["GET", "POST"])
