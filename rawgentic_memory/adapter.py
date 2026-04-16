@@ -4,7 +4,7 @@ MempalaceAdapter — versioned wrapper around mempalace's Python API.
 Bridge code calls this adapter — never mempalace directly.
 Major version aligned with mempalace's major version.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import os
 
@@ -19,6 +19,13 @@ class HealthStatus:
     version: str = ""
 
 
+@dataclass
+class WakeupContext:
+    text: str
+    tokens: int
+    layers: list[str] = field(default_factory=list)
+
+
 class MempalaceAdapter:
     CONTRACT_VERSION = 3
     MIN_VERSION = "3.3.0"
@@ -26,6 +33,18 @@ class MempalaceAdapter:
 
     def __init__(self, palace_path: str | None = None):
         self.palace_path = palace_path or os.path.expanduser("~/.mempalace/palace")
+
+    def wakeup(self, project: str | None = None) -> WakeupContext:
+        try:
+            from mempalace.layers import Layer0, Layer1
+            l0 = Layer0().render()
+            l1 = Layer1(palace_path=self.palace_path, wing=project).generate()
+            text = f"{l0}\n\n{l1}"
+            # Token estimate: chars/4 ±25% — over for code-heavy, under for NL.
+            return WakeupContext(text=text, tokens=len(text) // 4, layers=["L0", "L1"])
+        except Exception as e:
+            logger.warning("wakeup failed: %s", e)
+            return WakeupContext(text="", tokens=0, layers=[])
 
     def health(self) -> HealthStatus:
         try:
