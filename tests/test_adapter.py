@@ -201,3 +201,26 @@ class TestFactCheck:
         assert len(issues) == 1
         assert issues[0].type == "similar_name"
         assert "Mlls" in issues[0].detail
+
+
+class TestCanaryWrite:
+    def test_canary_write_returns_true_on_success(self):
+        from unittest.mock import patch, MagicMock
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        mock_col = MagicMock()
+        # Lazy imports inside canary_write() — patch at source module
+        with patch("mempalace.palace.get_collection", return_value=mock_col), \
+             patch("mempalace.miner.add_drawer") as mock_add:
+            result = adapter.canary_write("test fact")
+        assert result is True
+        mock_add.assert_called_once()
+        # Verify canary wing routing
+        _, kwargs = mock_add.call_args
+        assert kwargs.get("wing") == "canary"
+
+    def test_canary_write_returns_false_on_exception(self):
+        from unittest.mock import patch
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        with patch("mempalace.palace.get_collection", side_effect=RuntimeError("boom")):
+            result = adapter.canary_write("test fact")
+        assert result is False
