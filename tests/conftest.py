@@ -7,11 +7,11 @@ from starlette.testclient import TestClient
 
 
 @pytest.fixture
-def app():
+def app(isolated_palace):
     """Create a fresh FastAPI app instance for testing."""
-    from rawgentic_memory.server import create_app
+    from rawgentic_memory.server import build_app
 
-    return create_app()
+    return build_app(palace_path=str(isolated_palace))
 
 
 @pytest.fixture
