@@ -40,7 +40,30 @@ Unlike r1/r2, this plugin does **no custom ingestion**. MemPalace's own `Stop` a
 claude plugin install rawgentic-memorypalace@rawgentic-memorypalace
 ```
 
-This installs the bridge hooks and registers the MemPalace MCP server. MemPalace itself must be installed separately (see Prerequisites).
+This installs the bridge (HTTP server + bash hooks). MemPalace itself and the MemPalace MCP server are **separate setup steps** — the bridge alone can't know which Python environment holds your MemPalace install, so it doesn't guess.
+
+### MCP Setup
+
+Pick the path that matches your deployment:
+
+**(a) Single-workstation, `pip install --user mempalace`:**
+```bash
+claude mcp add -s user mempalace -- python3 -m mempalace.mcp_server
+```
+Works if `python3` on PATH has `mempalace` importable.
+
+**(b) Single-workstation, `pipx install mempalace`:**
+```bash
+claude mcp add -s user mempalace -- ~/.local/share/pipx/venvs/mempalace/bin/python -m mempalace.mcp_server
+```
+pipx isolates mempalace in its own venv — point at that venv's python directly.
+
+**(c) Central server (multiple client hosts share one palace via SSH):**
+On the **server host** (e.g. 10.0.17.205), install mempalace and run the slim server bound to a LAN-reachable address (see [Central Server](#central-server) below). On each **client host**:
+```bash
+claude mcp add -s user mempalace -- ssh <server-host> exec ~/.local/share/pipx/venvs/mempalace/bin/python -m mempalace.mcp_server
+```
+MCP's stdio protocol tunnels over SSH — all palace operations execute in the server's mempalace process. Clients need SSH access but no local mempalace install.
 
 After install, **configure your identity**:
 
@@ -143,6 +166,78 @@ This is a **breaking cutover**, not an additive update. r3 replaces:
 
 Data migrated automatically via `mempalace migrate` (idempotent) in the upgrade path. Old palace is backed up to `~/.mempalace.backup-<date>` before any changes.
 
+## Central Server
+
+For a single mempalace shared by multiple Claude Code workstations, run the bridge's slim server on one host ("server host") bound to a network-reachable address, and configure other hosts as pure clients.
+
+### On the server host
+
+1. Install mempalace (pipx or pip — your choice) so `mempalace` CLI is on PATH.
+2. Install and configure the plugin + native hooks + local MCP (same as single-workstation setup).
+3. Run the slim server bound to your LAN-reachable address. Easiest: a systemd unit.
+
+Example `/etc/systemd/system/rawgentic-memorypalace.service`:
+
+```ini
+[Unit]
+Description=rawgentic-memorypalace slim HTTP server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=<your-user>
+WorkingDirectory=/path/to/rawgentic-memorypalace-checkout
+ExecStart=/path/to/.venv/bin/python -m rawgentic_memory.server --host 0.0.0.0 --port 8420 --timeout 0
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/var/log/rawgentic-memorypalace.log
+StandardError=append:/var/log/rawgentic-memorypalace.log
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable + start:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now rawgentic-memorypalace.service
+```
+
+Open your firewall for inbound on port 8420 (LAN only unless you want public access):
+```bash
+sudo ufw allow from <LAN-cidr> to any port 8420 proto tcp comment "rawgentic-memorypalace from LAN"
+```
+
+### On each client host
+
+1. Install the plugin (`claude plugin install rawgentic-memorypalace@...`) — you do NOT need mempalace installed locally.
+2. Set env vars in `~/.bashrc`:
+   ```bash
+   export MEMORY_SERVER_URL=http://<server-host>:8420
+   export MEMORY_NO_AUTOSTART=1  # don't try to lazy-start a local server
+   ```
+3. Register MCP via SSH tunnel (see [MCP Setup](#mcp-setup) option c).
+4. Register native Stop + PreCompact hooks in `~/.claude/settings.json`, wrapping the mempalace CLI in SSH:
+   ```json
+   {
+     "hooks": {
+       "Stop": [{"matcher":"*","hooks":[{"type":"command","command":"ssh <server-host> exec ~/.local/bin/mempalace hook run --hook stop --harness claude-code","timeout":45}]}],
+       "PreCompact": [{"hooks":[{"type":"command","command":"ssh <server-host> exec ~/.local/bin/mempalace hook run --hook precompact --harness claude-code","timeout":45}]}]
+     }
+   }
+   ```
+5. Passwordless SSH to the server host must be set up (hooks can't prompt for a password).
+
+### Architectural note
+
+With the SSH-tunneled MCP + LAN-exposed HTTP server, **every palace operation from every client executes in the server's single mempalace process**. This sidesteps ChromaDB's multi-process unsafety — there is only one writer, by construction.
+
+Tradeoffs:
+- Added MCP call latency: SSH overhead ~50–200ms per call. Acceptable for memory operations (not hot-path).
+- Single point of failure: if the server host is down, clients lose memory (hooks exit 0 silently, MCP tools return errors).
+- SSH key management: clients need key-based auth to the server.
+
 ## Concurrency
 
 All palace access goes through the single-process HTTP server (`:8420`). ChromaDB's multi-process behavior is unsafe (no HNSW file locking, DELETE journal mode) — the server acts as a gatekeeper. MemPalace's native hooks also access the palace via MCP (separate process), but only through specific write operations (`mempalace_diary_write`, `mempalace_add_drawer`) — not the high-throughput bulk ingest that caused r1/r2 corruption.
@@ -151,13 +246,11 @@ All palace access goes through the single-process HTTP server (`:8420`). ChromaD
 
 ### `mempalace MCP: ✗ Failed to connect`
 
-The plugin's `plugin.json` uses `python -m mempalace.mcp_server`. This requires mempalace to be importable from the `python` on PATH:
+The plugin does NOT declare a default MCP config (since 0.2.1) — you configure MCP explicitly for your environment. If you see "Failed to connect" in `claude mcp list`, it's probably because:
 
-- **If you used `pip install --user mempalace`:** usually works out of the box (mempalace lands in `~/.local/lib/python3.*/site-packages/`, visible to system python).
-- **If you used `pipx install mempalace`:** mempalace is isolated in its own venv. Add a user-level override:
-  ```bash
-  claude mcp add -s user mempalace -- ~/.local/share/pipx/venvs/mempalace/bin/python -m mempalace.mcp_server
-  ```
+- You haven't run `claude mcp add` yet → see [MCP Setup](#mcp-setup) for the exact command per environment.
+- You ran `claude mcp add` with bare `python -m mempalace.mcp_server` but your `python` doesn't have mempalace importable → switch to `python3` if that's your binary name, or use the pipx-venv path explicitly.
+- You're on a client host pointing at a central server via SSH, but passwordless SSH isn't set up → configure key-based auth to the server.
 
 ### Server won't start
 
