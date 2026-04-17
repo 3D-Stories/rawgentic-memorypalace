@@ -63,7 +63,13 @@ if [[ -n "$FACT_RESPONSE" ]]; then
         ADDITIONAL=$(echo "$FACT_RESPONSE" | jq -r '.additionalContext // empty' 2>/dev/null) || true
         if [[ -n "$ADDITIONAL" ]]; then
             _debug "PostToolUse: fact-check issues found"
-            printf '{"hookSpecificOutput": %s}\n' "$FACT_RESPONSE"
+            # Claude Code schema: {hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: <string>}}
+            echo "$FACT_RESPONSE" | jq '{
+                hookSpecificOutput: {
+                    hookEventName: "PostToolUse",
+                    additionalContext: (.additionalContext // "")
+                }
+            }'
         else
             _debug "PostToolUse: fact-check clean"
         fi
