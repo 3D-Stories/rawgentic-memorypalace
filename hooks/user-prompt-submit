@@ -13,8 +13,9 @@ HOOK_INPUT=$(cat)
 # Extract prompt from hook input
 PROMPT=$(echo "$HOOK_INPUT" | jq -r '.prompt // empty' 2>/dev/null) || true
 
-# Resolve project
+# Auto-detect workspace from hook input .cwd (env var overrides)
 CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
+MEMPALACE_CLAUDE_WORKSPACE="${MEMPALACE_CLAUDE_WORKSPACE:-$CWD}"
 PROJECT=$(resolve_project "$CWD")
 
 _debug "UserPromptSubmit: project=$PROJECT prompt_len=${#PROMPT}"
