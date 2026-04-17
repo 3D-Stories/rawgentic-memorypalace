@@ -1,6 +1,6 @@
 {
   "name": "rawgentic-memorypalace",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Long-term memory plugin for Claude Code — MemPalace-powered storage with intelligent ingestion triggers, semantic search, and wake-up context.",
   "author": {
     "name": "3D-Stories",
