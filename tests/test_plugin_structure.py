@@ -109,31 +109,24 @@ class TestPyprojectDependencies:
 
 
 class TestMcpServerRegistration:
-    """Validate MCP server is registered in plugin.json."""
+    """Validate MCP setup — plugin.json does NOT declare a plugin-level MCP default.
+
+    MCP setup is environment-specific (pip install / pipx / SSH to central server),
+    so a single plugin-level default would fail in most environments. Users configure
+    MCP via `claude mcp add` after install — see README "MCP Setup" section.
+    """
 
     def _load_plugin(self):
         path = PROJECT_ROOT / ".claude-plugin" / "plugin.json"
         with open(path) as f:
             return json.load(f)
 
-    def test_mcp_servers_key_exists(self):
+    def test_plugin_does_not_declare_mcp_default(self):
         data = self._load_plugin()
-        assert "mcpServers" in data, "plugin.json must have mcpServers key"
-
-    def test_mempalace_mcp_server_registered(self):
-        data = self._load_plugin()
-        assert "mempalace" in data["mcpServers"], (
-            "mempalace MCP server must be registered"
+        assert "mcpServers" not in data, (
+            "plugin.json must NOT declare mcpServers — setup is user-configured "
+            "per environment. See README 'MCP Setup' section."
         )
-
-    def test_mcp_server_has_command(self):
-        server = self._load_plugin()["mcpServers"]["mempalace"]
-        assert "command" in server
-        assert "args" in server
-
-    def test_mcp_server_uses_mempalace_module(self):
-        server = self._load_plugin()["mcpServers"]["mempalace"]
-        assert "mempalace.mcp_server" in " ".join(server.get("args", []))
 
     def test_description_no_dual_backends(self):
         data = self._load_plugin()
