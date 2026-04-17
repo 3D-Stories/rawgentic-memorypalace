@@ -2,10 +2,10 @@
 # mempalace-hook-wrapper.sh {precompact|stop}
 #
 # Stop mode:       time-throttled. On non-due turns: no-op. On due turns:
-#                  inject AUTO-SAVE instruction via hookSpecificOutput so
-#                  Claude saves via MCP in the CURRENT session (cheap — no
-#                  fork, no "error" label in UI). Recursion guard retained
-#                  as defense-in-depth.
+#                  inject AUTO-SAVE instruction via systemMessage so Claude
+#                  saves via MCP. Stop hooks only support top-level fields
+#                  (systemMessage, decision, stopReason) — NOT hookSpecificOutput.
+#                  Recursion guard retained as defense-in-depth.
 #
 # PreCompact mode: fork-resume the session, save via MCP, approve compact on
 #                  success or BLOCK on failure (information loss is unacceptable
@@ -99,10 +99,11 @@ if [[ "$MODE" == "stop" ]]; then
         exit 0
     fi
 
-    # Due. Inject save instruction as additionalContext.
+    # Due. Inject save instruction via systemMessage (Stop hooks don't
+    # support hookSpecificOutput — only PreToolUse/UserPromptSubmit/PostToolUse do).
     log "injecting save context (${ELAPSED_VAL}s since last)"
     R=$(json_escape "$AUTO_SAVE_REASON")
-    printf '{"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":%s}}' "$R"
+    printf '{"systemMessage":%s}' "$R"
     exit 0
 fi
 
