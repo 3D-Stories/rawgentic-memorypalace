@@ -10,8 +10,9 @@ source "$SCRIPT_DIR/lib.sh"
 # Read hook input from stdin
 HOOK_INPUT=$(cat)
 
-# Resolve project from workspace registry or cwd
+# Auto-detect workspace from hook input .cwd (env var overrides)
 CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
+MEMPALACE_CLAUDE_WORKSPACE="${MEMPALACE_CLAUDE_WORKSPACE:-$CWD}"
 PROJECT=$(resolve_project "$CWD")
 
 # URL-encode project name (replace spaces with %20, etc.)

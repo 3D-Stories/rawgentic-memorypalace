@@ -22,8 +22,9 @@ MEMORY_NO_AUTOSTART="${MEMORY_NO_AUTOSTART:-0}"
 # Plugin venv Python path (derived from script location if not set)
 PLUGIN_VENV="${PLUGIN_VENV:-}"
 
-# Workspace root — for session registry lookups
-WORKSPACE_ROOT="${WORKSPACE_ROOT:-$HOME/rawgentic}"
+# Workspace root — for session registry lookups.
+# Auto-detected from hook input .cwd by each hook script; env var overrides.
+MEMPALACE_CLAUDE_WORKSPACE="${MEMPALACE_CLAUDE_WORKSPACE:-}"
 
 # --- Smart-gate thresholds ---
 # Minimum prompt character count to trigger recall
@@ -267,8 +268,9 @@ resolve_project() {
     local cwd="${1:-}"
 
     # Try workspace registry — most recently used active project
-    local workspace_json="${WORKSPACE_ROOT}/.rawgentic_workspace.json"
-    if [[ -f "$workspace_json" ]]; then
+    local workspace="${MEMPALACE_CLAUDE_WORKSPACE:-$cwd}"
+    local workspace_json="${workspace:+$workspace/.rawgentic_workspace.json}"
+    if [[ -n "$workspace_json" && -f "$workspace_json" ]]; then
         local reg_project
         reg_project=$(jq -r '[.projects[] | select(.active==true)] | sort_by(.lastUsed) | last | .name // empty' \
             "$workspace_json" 2>/dev/null) || true

@@ -29,8 +29,9 @@ esac
 TOOL_INPUT=$(echo "$HOOK_INPUT" | jq -r '.tool_input // {}' 2>/dev/null) || true
 FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // .path // empty' 2>/dev/null) || true
 
-# Resolve project
+# Auto-detect workspace from hook input .cwd (env var overrides)
 CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
+MEMPALACE_CLAUDE_WORKSPACE="${MEMPALACE_CLAUDE_WORKSPACE:-$CWD}"
 PROJECT=$(resolve_project "$CWD")
 
 _debug "PostToolUse: tool=$TOOL_NAME file=$FILE_PATH project=$PROJECT"
