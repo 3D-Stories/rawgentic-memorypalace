@@ -34,7 +34,14 @@ if [[ -n "$WAKEUP_RESPONSE" ]]; then
     # Validate JSON before outputting
     if echo "$WAKEUP_RESPONSE" | jq empty 2>/dev/null; then
         _debug "SessionStart: wakeup response received"
-        printf '{"hookSpecificOutput": %s}\n' "$WAKEUP_RESPONSE"
+        # Claude Code schema: {hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: <string>}}
+        # Extract the text field from the wakeup response.
+        echo "$WAKEUP_RESPONSE" | jq '{
+            hookSpecificOutput: {
+                hookEventName: "SessionStart",
+                additionalContext: (.text // "")
+            }
+        }'
     else
         _debug "SessionStart: wakeup returned non-JSON — ignoring"
     fi

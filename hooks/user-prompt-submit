@@ -45,8 +45,19 @@ SEARCH_RESPONSE=$(echo "$HOOK_INPUT" | \
 if [[ -n "$SEARCH_RESPONSE" ]]; then
     # Validate JSON before outputting
     if echo "$SEARCH_RESPONSE" | jq empty 2>/dev/null; then
-        _debug "UserPromptSubmit: search response received"
-        printf '{"hookSpecificOutput": %s}\n' "$SEARCH_RESPONSE"
+        ADDITIONAL=$(echo "$SEARCH_RESPONSE" | jq -r '.additionalContext // empty' 2>/dev/null) || true
+        if [[ -n "$ADDITIONAL" ]]; then
+            _debug "UserPromptSubmit: search has additionalContext, injecting"
+            # Claude Code schema: {hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: <string>}}
+            echo "$SEARCH_RESPONSE" | jq '{
+                hookSpecificOutput: {
+                    hookEventName: "UserPromptSubmit",
+                    additionalContext: (.additionalContext // "")
+                }
+            }'
+        else
+            _debug "UserPromptSubmit: search empty — skipping injection"
+        fi
     else
         _debug "UserPromptSubmit: search returned non-JSON — ignoring"
     fi
