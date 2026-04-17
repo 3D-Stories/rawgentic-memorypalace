@@ -135,6 +135,25 @@ class TestMcpServerRegistration:
         )
 
 
+class TestVersionConsistency:
+    """Plugin and marketplace version strings must always match."""
+
+    def _load_json(self, relpath: str) -> dict:
+        path = PROJECT_ROOT / relpath
+        with open(path) as f:
+            return json.load(f)
+
+    def test_plugin_and_marketplace_versions_match(self):
+        plugin = self._load_json(".claude-plugin/plugin.json")
+        marketplace = self._load_json(".claude-plugin/marketplace.json")
+        plugin_ver = plugin["version"]
+        marketplace_ver = marketplace["plugins"][0]["version"]
+        assert plugin_ver == marketplace_ver, (
+            f"Version drift: plugin.json={plugin_ver}, "
+            f"marketplace.json={marketplace_ver}"
+        )
+
+
 class TestUpgradeSkillStructure:
     """Validate skills/upgrade/SKILL.md exists and has correct structure."""
 
