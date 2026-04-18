@@ -5,7 +5,7 @@ argument-hint: No arguments needed
 ---
 
 <role>
-You are the dependency upgrade assistant. Your job is to safely upgrade the mempalace pip package and report the results.
+You are the dependency upgrade assistant. Your job is to safely upgrade the mempalace package and report the results.
 </role>
 
 # /rawgentic-memorypalace:upgrade — Upgrade MemPalace Dependency
@@ -14,25 +14,43 @@ Upgrade the mempalace library that powers the memory backend.
 
 ## Instructions
 
-### 1. Get Current Version
+### 1. Detect Install Method
 
-Use the Bash tool to capture the current version:
+mempalace can be installed via pipx, pip, or the plugin's own .venv. Run this to detect which:
 
 ```bash
-python3 -c "import mempalace; print(mempalace.__version__)" 2>/dev/null || echo "NOT_INSTALLED"
+echo "=== pipx ===" && pipx list 2>/dev/null | grep -A1 "mempalace" || echo "not in pipx"
+echo "=== pip (user) ===" && python3 -c "import mempalace; print(mempalace.__version__)" 2>/dev/null || echo "not in python3"
+echo "=== plugin venv ===" && PLUGIN_VENV=$(jq -r '.plugins["rawgentic-memorypalace@rawgentic-memorypalace"][0].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null) && "$PLUGIN_VENV/.venv/bin/python3" -c "import mempalace; print(mempalace.__version__)" 2>/dev/null || echo "not in plugin venv"
 ```
 
-If `NOT_INSTALLED`, tell the user mempalace is not installed and suggest `pip install mempalace`. STOP.
+Determine the install method:
+- **pipx:** `pipx list` shows `package mempalace X.Y.Z` → use `pipx upgrade mempalace`
+- **pip (user/system):** `python3 -c "import mempalace"` succeeds → use `pip install --upgrade mempalace`
+- **plugin venv:** plugin venv python can import it → use `<plugin-venv>/bin/pip install --upgrade mempalace`
+- **None found:** tell the user mempalace is not installed and suggest `pipx install mempalace` (preferred) or `pip install --user mempalace`. STOP.
+
+Record the current version from whichever method succeeds.
 
 ### 2. Run the Upgrade
 
-```bash
-pip install --upgrade mempalace 2>&1
-```
+Use the appropriate command based on detected install method:
+
+| Method | Upgrade command |
+|--------|----------------|
+| pipx | `pipx upgrade mempalace` |
+| pip (user/system) | `pip install --upgrade mempalace` |
+| plugin venv | `<plugin-venv-path>/bin/pip install --upgrade mempalace` |
 
 ### 3. Get New Version
 
+Re-check the version using the same Python that had mempalace:
+
 ```bash
+# For pipx:
+~/.local/bin/mempalace --version 2>/dev/null || ~/.local/share/pipx/venvs/mempalace/bin/python3 -c "import mempalace; print(mempalace.__version__)"
+
+# For pip:
 python3 -c "import mempalace; print(mempalace.__version__)"
 ```
 
@@ -51,6 +69,7 @@ mempalace is already up to date (v{version}).
 
 - **Old version:** v{old_version}
 - **New version:** v{new_version}
+- **Install method:** {pipx|pip|plugin venv}
 ```
 
 **If the major version changed** (e.g., 3.x → 4.x):
@@ -62,10 +81,11 @@ before restarting sessions. The memory server may need updates.
 
 ### 5. Verify the Upgrade
 
-Run a quick import check to confirm the upgrade didn't break anything:
+Run a quick import check using the correct Python to confirm the upgrade didn't break anything:
 
 ```bash
-python3 -c "from mempalace.miner import get_collection; from mempalace.searcher import search_memories; from mempalace.layers import MemoryStack; print('All imports OK')"
+# Use the same python that has mempalace (pipx venv, system python3, or plugin venv)
+<python> -c "from mempalace.miner import get_collection; from mempalace.searcher import search_memories; from mempalace.layers import MemoryStack; print('All imports OK')"
 ```
 
 If verification fails, warn the user that the upgrade may have broken compatibility.

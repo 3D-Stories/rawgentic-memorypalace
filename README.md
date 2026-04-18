@@ -25,14 +25,14 @@ Claude Code hooks are short-lived bash processes. They can't import mempalace di
 
 ### Ingest path
 
-Unlike r1/r2, this plugin does **no custom ingestion**. MemPalace's own `Stop` and `PreCompact` hooks (installed in `~/.claude/settings.json`) handle it — they block Claude Code and instruct the LLM to save session content via MCP tools (`mempalace_diary_write`, `mempalace_add_drawer`, `mempalace_kg_add`). All writes route through the adapter's `canary_write()` in tests.
+Unlike r1/r2, this plugin does **no custom ingestion**. The plugin's `mempalace-hook-wrapper.sh` script (at `hooks/mempalace-hook-wrapper.sh`, configured in `~/.claude/settings.json` for Stop and PreCompact events) handles it. The Stop hook injects a `systemMessage` instructing the LLM to save session content via MCP tools (`mempalace_diary_write`, `mempalace_add_drawer`, `mempalace_kg_add`). The PreCompact hook forks the session to save before compaction (blocks compaction on failure). All writes route through the adapter's `canary_write()` in tests.
 
 ## Prerequisites
 
 - Python 3.12+ (mempalace's minimum)
 - `jq` (hook JSON parsing)
 - `curl` (hook HTTP calls)
-- MemPalace 3.3.0+ installed **in the Python environment the plugin will reach**. Simplest install: `pip install --user mempalace`. For isolated installs via pipx, see [Troubleshooting](#troubleshooting).
+- MemPalace 3.3.0+ installed. Preferred: `pipx install mempalace` (isolates in its own venv). Alternative: `pip install --user mempalace`. Upgrade: `/rawgentic-memorypalace:upgrade` (auto-detects pipx vs pip).
 
 ## Installation
 
@@ -88,10 +88,13 @@ Default `http://127.0.0.1:8420`. Override via project `CLAUDE.md` section `Memor
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `RECALL_MIN_PROMPT_CHARS` | 20 | Skip `/search` on prompts shorter than this |
-| `RECALL_DEBOUNCE_SECS` | 60 | Minimum seconds between `/search` calls per project |
-| `RECALL_SIMILARITY_THRESHOLD` | 0.5 | Min similarity score for results to inject |
-| `FACT_CHECK_DEBOUNCE_SECS` | 30 | Minimum seconds between `/fact_check` calls |
-| `RECALL_MAX_RESULTS` | 3 | Max results per `/search` (bounds context budget) |
+| `RECALL_DEBOUNCE_SECS` | 30 | Minimum seconds between `/search` calls per project |
+| `RECALL_SIMILARITY_THRESHOLD` | 0.30 | Min similarity score for results to inject |
+| `RECALL_MAX_RESULTS` | 5 | Max results per `/search` (bounds context budget) |
+| `FACT_CHECK_DEBOUNCE_SECS` | 60 | Minimum seconds between `/fact_check` calls |
+| `MEMPALACE_CLAUDE_WORKSPACE` | auto-detected from `.cwd` | Override workspace root for session registry lookups and PreCompact fork |
+| `MEMPALACE_STOP_BLOCK_INTERVAL_SECS` | 900 (15 min) | Minimum seconds between Stop hook save injections |
+| `MEMPALACE_PRECOMPACT_TIMEOUT_SECS` | 180 (3 min) | Timeout for the PreCompact fork-save operation |
 | `MEMPAL_DIR` | — | Directory for MemPalace's Background Everything miner |
 | `MEMORY_DEBUG` | — | Set to `1` to enable hook stderr logging |
 | `MEMORY_NO_AUTOSTART` | — | Set to `1` to prevent `SessionStart` from lazy-starting the server |
@@ -114,18 +117,18 @@ The server is **read-only** for non-canary requests. All writes go through MemPa
 
 | Hook | Event | Matcher | Timeout | Behavior |
 |------|-------|---------|---------|----------|
-| `session-start` | SessionStart | `startup\|resume` | 10s | `curl /wakeup` → inject as `additionalContext` |
+| `session-start` | SessionStart | (all) | 10s | `curl /wakeup` → inject as `additionalContext` |
 | `user-prompt-submit` | UserPromptSubmit | (all) | 5s | Smart-gate → `curl /search` → inject `additionalContext` on hit |
 | `post-tool-use` | PostToolUse | `Edit\|Write\|MultiEdit` | 5s | Throttle + dedup → `curl /fact_check` |
 
-MemPalace native hooks (configured in `~/.claude/settings.json`, not here):
+Plugin wrapper hooks (configured in `~/.claude/settings.json`, shipped in `hooks/mempalace-hook-wrapper.sh`):
 
-| Hook | Event | Purpose |
-|------|-------|---------|
-| `mempalace hook run --hook stop --harness claude-code` | Stop | AUTO-SAVE checkpoint — instructs LLM to save session content |
-| `mempalace hook run --hook precompact --harness claude-code` | PreCompact | Blocks compaction until session is saved to palace |
+| Command | Event | Timeout | Behavior |
+|---------|-------|---------|----------|
+| `mempalace-hook-wrapper.sh stop` | Stop | 210s | Time-throttled (15 min default). When due, injects `systemMessage` instructing Claude to save via MCP. Recursion-guarded. |
+| `mempalace-hook-wrapper.sh precompact` | PreCompact | 210s | Forks the session to save via MCP. Blocks compaction on failure (information loss prevention). |
 
-All bridge hooks degrade gracefully — if the memory server is unreachable, they exit 0 with no output.
+All bridge hooks degrade gracefully — if the memory server is unreachable, they exit 0 with no output. The wrapper auto-detects the workspace root from hook input `.cwd` (override via `MEMPALACE_CLAUDE_WORKSPACE`).
 
 ## Skills
 
@@ -146,11 +149,17 @@ pip install -e ".[dev]"
 .venv/bin/python -m pytest tests/ -v
 ```
 
-Test suite layout:
-- `tests/test_adapter.py` — 26 unit tests for the versioned adapter
+Test suite (171 unit tests):
+- `tests/test_adapter.py` — 26 tests for the versioned adapter (CONTRACT_VERSION=3)
 - `tests/test_server_slim.py` — 14 tests for the 6 HTTP endpoints + 410 Gone handlers
 - `tests/test_lib_sh.py` — 16 tests for bash hook helpers (smart gate, debounce, dedup)
-- `tests/test_plugin_structure.py` — 22 tests for plugin/marketplace config consistency
+- `tests/test_hook_output_schema.py` — 17 tests validating all 4 hook scripts against Claude Code's hook-response schema (mock HTTP server, no live palace)
+- `tests/test_portable_hooks.py` — 10 tests for wrapper portability (no hardcoded paths, recursion guard, workspace auto-detection)
+- `tests/test_plugin_structure.py` — 20 tests for plugin/marketplace config (version match, required fields, no MCP default)
+- `tests/test_recall_skill.py` — 24 tests for the recall skill (search, invalidate, timeline subcommands)
+- `tests/test_memory_ui_skill.py` — 16 tests for the memory-ui skill
+- `tests/test_frontend_compose.py` — 16 tests for frontend Docker Compose config
+- `tests/test_frontend_decision.py` — 12 tests for frontend deployment decisions
 - `tests/integration/` — graceful degradation, hook timeouts, version boundaries, acceptance criteria
 - `tests/canary.py` — standalone continuous-health canary script
 
@@ -218,16 +227,17 @@ sudo ufw allow from <LAN-cidr> to any port 8420 proto tcp comment "rawgentic-mem
    export MEMORY_NO_AUTOSTART=1  # don't try to lazy-start a local server
    ```
 3. Register MCP via SSH tunnel (see [MCP Setup](#mcp-setup) option c).
-4. Register native Stop + PreCompact hooks in `~/.claude/settings.json`, wrapping the mempalace CLI in SSH:
+4. Register Stop + PreCompact hooks in `~/.claude/settings.json`. The wrapper lives in the plugin at `hooks/mempalace-hook-wrapper.sh` — find the installed path with `jq -r '.plugins["rawgentic-memorypalace@rawgentic-memorypalace"][0].installPath' ~/.claude/plugins/installed_plugins.json`:
    ```json
    {
      "hooks": {
-       "Stop": [{"matcher":"*","hooks":[{"type":"command","command":"ssh <server-host> exec ~/.local/bin/mempalace hook run --hook stop --harness claude-code","timeout":45}]}],
-       "PreCompact": [{"hooks":[{"type":"command","command":"ssh <server-host> exec ~/.local/bin/mempalace hook run --hook precompact --harness claude-code","timeout":45}]}]
+       "Stop": [{"matcher":"*","hooks":[{"type":"command","command":"<plugin-install-path>/hooks/mempalace-hook-wrapper.sh stop","timeout":210}]}],
+       "PreCompact": [{"hooks":[{"type":"command","command":"<plugin-install-path>/hooks/mempalace-hook-wrapper.sh precompact","timeout":210}]}]
      }
    }
    ```
-5. Passwordless SSH to the server host must be set up (hooks can't prompt for a password).
+   Alternatively, copy the wrapper to `~/.local/bin/mempalace-hook-wrapper.sh` and reference it there.
+5. Passwordless SSH to the server host must be set up (hooks can't prompt for a password). The wrapper's PreCompact mode forks the session via `claude --resume`, which must run from the workspace root — set `MEMPALACE_CLAUDE_WORKSPACE` in the Stop hook command if auto-detection from `.cwd` doesn't resolve correctly.
 
 ### Architectural note
 
@@ -262,9 +272,13 @@ Check the log: `tail -50 /tmp/memorypalace-server.log`. Common causes: port 8420
 - Check the wing — auto-recall filters by the active rawgentic project. Search via MCP (`mempalace_search` with no wing filter) to confirm the content is in the palace.
 - Check `/diagnostic` — look for `contract_violations` (version drift, missing MCP tools).
 
-### Stop hook blocks every session end with "AUTO-SAVE checkpoint"
+### Stop hook shows "AUTO-SAVE checkpoint" at session end
 
-That's working as intended — MemPalace's Stop hook instructs Claude to save session content via MCP before terminating. To disable temporarily, comment out the Stop hook in `~/.claude/settings.json`.
+That's working as intended — the wrapper's Stop hook injects a `systemMessage` instructing Claude to save session content via MCP. It's time-throttled (default: every 15 min, controlled by `MEMPALACE_STOP_BLOCK_INTERVAL_SECS`). To disable temporarily, comment out the Stop hook in `~/.claude/settings.json`.
+
+### "Hook JSON output validation failed" on Stop hook
+
+The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason`) — NOT `hookSpecificOutput`. If you see this error, your wrapper is outdated. Update it by copying from the plugin: `cp <plugin-path>/hooks/mempalace-hook-wrapper.sh ~/.local/bin/`.
 
 ## License
 
