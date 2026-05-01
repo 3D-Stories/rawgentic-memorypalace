@@ -118,10 +118,10 @@ class TestRecallInvalidateSubcommand:
             "Skill must document the invalidate subcommand (AC6)"
         )
 
-    def test_invalidate_calls_kg_endpoint(self):
+    def test_invalidate_uses_mcp_tool(self):
         body = self._read_body()
-        assert "/kg/invalidate" in body, (
-            "Invalidate subcommand must reference /kg/invalidate endpoint"
+        assert "mempalace_kg_invalidate" in body, (
+            "Invalidate subcommand must reference mempalace_kg_invalidate MCP tool"
         )
 
     def test_invalidate_parses_triple(self):
@@ -150,10 +150,10 @@ class TestRecallTimelineSubcommand:
             "Skill must document the timeline subcommand (AC7)"
         )
 
-    def test_timeline_calls_kg_endpoint(self):
+    def test_timeline_uses_mcp_tool(self):
         body = self._read_body()
-        assert "/kg/timeline" in body, (
-            "Timeline subcommand must reference /kg/timeline endpoint"
+        assert "mempalace_kg_timeline" in body, (
+            "Timeline subcommand must reference mempalace_kg_timeline MCP tool"
         )
 
     def test_timeline_format_specified(self):
