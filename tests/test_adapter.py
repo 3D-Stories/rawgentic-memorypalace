@@ -7,6 +7,7 @@ from rawgentic_memory.adapter import (
     SearchResult,
     FactIssue,
     ContractViolation,
+    TunnelLink,
 )
 
 
@@ -28,31 +29,26 @@ class TestHealth:
 
 
 class TestWakeup:
-    def test_wakeup_returns_l0_and_l1(self, isolated_palace):
-        # Layer0 reads from ~/.mempalace/identity.txt, not from tmp_path, so it
-        # returns default "No identity configured..." text in test isolation —
-        # that's fine. The assertions below validate the method wires L0+L1 and
-        # produces a non-empty token count regardless of identity content.
+    def test_wakeup_with_project_returns_tunnel_context(self, isolated_palace):
         adapter = MempalaceAdapter(palace_path=str(isolated_palace))
-        ctx = adapter.wakeup()
+        ctx = adapter.wakeup(project="rawgentic_memorypalace")
         assert isinstance(ctx, WakeupContext)
-        assert "L0" in ctx.layers
-        assert "L1" in ctx.layers
-        assert ctx.tokens > 0
+        assert "L0" not in ctx.layers
+        assert "L1" not in ctx.layers
 
-    def test_wakeup_returns_empty_when_mempalace_unavailable(
-        self, tmp_path, monkeypatch, mock_mempalace_unavailable
-    ):
-        # mock_mempalace_unavailable sets sys.modules["mempalace"] = None.
-        # We also null "mempalace.layers" in case a previous test has already
-        # cached it — Python skips parent lookup when the submodule key exists.
-        # Both entries set to None guarantee ModuleNotFoundError in wakeup()'s
-        # lazy `from mempalace.layers import ...`, exercising the except branch.
-        monkeypatch.setitem(__import__("sys").modules, "mempalace.layers", None)
-        adapter = MempalaceAdapter(palace_path=str(tmp_path))
-        ctx = adapter.wakeup()
+    def test_wakeup_without_project_returns_empty(self, isolated_palace):
+        adapter = MempalaceAdapter(palace_path=str(isolated_palace))
+        ctx = adapter.wakeup(project=None)
         assert ctx.text == ""
         assert ctx.tokens == 0
+        assert ctx.layers == []
+
+    def test_wakeup_graceful_on_import_error(self, tmp_path, monkeypatch):
+        monkeypatch.setitem(__import__("sys").modules, "mempalace.palace_graph", None)
+        monkeypatch.setitem(__import__("sys").modules, "mempalace", None)
+        adapter = MempalaceAdapter(palace_path=str(tmp_path))
+        ctx = adapter.wakeup(project="test")
+        assert ctx.text == ""
         assert ctx.layers == []
 
 
@@ -318,3 +314,74 @@ class TestVersionComparison:
     def test_tuple_comparison_correct_for_double_digit_minor(self):
         assert MempalaceAdapter._parse_version("3.10.0") > MempalaceAdapter._parse_version("3.3.0")
         assert MempalaceAdapter._parse_version("3.3.10") > MempalaceAdapter._parse_version("3.3.2")
+
+
+class TestTunnelContext:
+    def test_tunnel_link_dataclass(self):
+        link = TunnelLink(
+            shared_topic="documentation",
+            connected_wings=["chorestory", "grocusave"],
+            drawer_count=150,
+        )
+        assert link.shared_topic == "documentation"
+        assert len(link.connected_wings) == 2
+        assert link.drawer_count == 150
+
+    def test_render_tunnel_context_with_tunnels(self):
+        from unittest.mock import patch
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        fake_tunnels = [
+            {"room": "documentation", "wings": ["proj_a", "proj_b", "proj_c"], "count": 500},
+            {"room": "testing", "wings": ["proj_a", "proj_d"], "count": 100},
+        ]
+        with patch("mempalace.palace_graph.find_tunnels", return_value=fake_tunnels):
+            text = adapter._render_tunnel_context("proj_a")
+        assert "Cross-project links" in text
+        assert "documentation" in text
+        assert "proj_b" in text
+        assert "proj_a" not in text  # current wing excluded from list
+
+    def test_render_tunnel_context_empty_when_no_tunnels(self):
+        from unittest.mock import patch
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        with patch("mempalace.palace_graph.find_tunnels", return_value=[]):
+            text = adapter._render_tunnel_context("proj_a")
+        assert text == ""
+
+    def test_wakeup_includes_tunnels_layer_when_tunnels_exist(self):
+        from unittest.mock import patch
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        fake_tunnels = [
+            {"room": "documentation", "wings": ["proj_a", "proj_b"], "count": 500},
+        ]
+        with patch("mempalace.palace_graph.find_tunnels", return_value=fake_tunnels):
+            ctx = adapter.wakeup(project="proj_a")
+        assert "tunnels" in ctx.layers
+        assert "Cross-project links" in ctx.text
+        assert ctx.tokens > 0
+
+
+class TestFindTunnels:
+    def test_find_tunnels_returns_list(self, isolated_palace):
+        adapter = MempalaceAdapter(palace_path=str(isolated_palace))
+        tunnels = adapter.find_tunnels_for_wing("test_wing")
+        assert isinstance(tunnels, list)
+
+    def test_find_tunnels_graceful_on_error(self, tmp_path, monkeypatch):
+        monkeypatch.setitem(__import__("sys").modules, "mempalace.palace_graph", None)
+        monkeypatch.setitem(__import__("sys").modules, "mempalace", None)
+        adapter = MempalaceAdapter(palace_path=str(tmp_path))
+        tunnels = adapter.find_tunnels_for_wing("test_wing")
+        assert tunnels == []
+
+    def test_find_tunnels_excludes_own_wing(self):
+        from unittest.mock import patch
+        adapter = MempalaceAdapter(palace_path="/tmp")
+        fake_tunnels = [
+            {"room": "docs", "wings": ["proj_a", "proj_b", "proj_c"], "count": 100},
+        ]
+        with patch("mempalace.palace_graph.find_tunnels", return_value=fake_tunnels):
+            tunnels = adapter.find_tunnels_for_wing("proj_a")
+        assert len(tunnels) == 1
+        assert "proj_a" not in tunnels[0].connected_wings
+        assert "proj_b" in tunnels[0].connected_wings

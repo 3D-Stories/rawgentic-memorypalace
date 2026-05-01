@@ -116,6 +116,20 @@ def build_app(
         ctx = adapter.wakeup(project=project or None)
         return JSONResponse(asdict(ctx))
 
+    @app.get("/tunnels")
+    async def tunnels(wing: str = Query(max_length=128)):
+        links = adapter.find_tunnels_for_wing(wing)
+        return JSONResponse({
+            "tunnels": [
+                {
+                    "shared_topic": t.shared_topic,
+                    "connected_wings": t.connected_wings,
+                    "drawer_count": t.drawer_count,
+                }
+                for t in links
+            ]
+        })
+
     @app.post("/fact_check")
     async def fact_check(request: Request):
         body = _parse_body(await request.body())
