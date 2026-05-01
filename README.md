@@ -1,6 +1,6 @@
 # rawgentic-memorypalace
 
-Claude Code plugin providing long-term memory powered by [MemPalace](https://github.com/milla-jovovich/mempalace). Bridges Claude Code's hook system to MemPalace's Python API via a slim HTTP gatekeeper + adapter layer, with native MemPalace hooks handling ingest.
+**v0.4.0** · Claude Code plugin providing long-term memory powered by [MemPalace](https://github.com/milla-jovovich/mempalace). Bridges Claude Code's hook system to MemPalace's Python API via a slim HTTP gatekeeper + adapter layer, with native MemPalace hooks handling ingest.
 
 ## Architecture (r3)
 
@@ -14,11 +14,19 @@ Three independent pieces cooperate:
 
 Claude Code hooks are short-lived bash processes. They can't import mempalace directly — they need a persistent server. ChromaDB also can't safely handle multi-process writes. So the bridge runs a single-process HTTP server (`:8420`) that serializes all palace access behind a stable adapter interface (`CONTRACT_VERSION=3`, `MIN_VERSION=3.3.0`, `MAX_VERSION<4.0`).
 
-### Four recall layers
+### What mempalace handles natively (not us)
+
+- **L0 identity** — `~/.mempalace/identity.txt` injected at every session start
+- **L1 memory context** — recent memories, diary entries, and per-wing context at session start
+- **19+ MCP tools** — search, diary, drawers, KG, tunnels, etc.
+- **Background mining** — conversation transcript and project content ingest
+- **Stop/PreCompact hooks** — auto-save session content via MCP tools
+
+### What this bridge adds (our unique value)
 
 | Layer | Trigger | Mechanism | Cost |
 |-------|---------|-----------|------|
-| L1 — Session wakeup | `SessionStart` hook | `GET /wakeup` → L0 identity + L1 recent context injection | One HTTP call per session |
+| Tunnel context | `SessionStart` hook | `GET /wakeup` → cross-wing topic tunnels for multi-project awareness | One HTTP call per session |
 | L2 — Auto-recall | `UserPromptSubmit` hook | Smart-gated `POST /search` on substantive prompts (> 20 chars, no slash commands, stop-words filtered, debounced) | ≤ 1 HTTP call per prompt |
 | L3 — Proactive MCP | LLM reasoning | Claude directly calls `mcp__mempalace__mempalace_search` / `mempalace_kg_query` mid-thought | Zero infra cost — model budget only |
 | L4 — Fact-checking | `PostToolUse` on Edit/Write/MultiEdit | Throttled `POST /fact_check` against file content | ≤ 1 HTTP call per file (per-session dedup) |
@@ -32,7 +40,7 @@ Unlike r1/r2, this plugin does **no custom ingestion**. The plugin's `mempalace-
 - Python 3.12+ (mempalace's minimum)
 - `jq` (hook JSON parsing)
 - `curl` (hook HTTP calls)
-- MemPalace 3.3.0+ installed. Preferred: `pipx install mempalace` (isolates in its own venv). Alternative: `pip install --user mempalace`. Upgrade: `/rawgentic-memorypalace:upgrade` (auto-detects pipx vs pip).
+- MemPalace 3.3.4+ installed. Preferred: `pipx install mempalace` (isolates in its own venv). Alternative: `pip install --user mempalace`. Upgrade: `/rawgentic-memorypalace:upgrade` (auto-detects pipx vs pip).
 
 ## Installation
 
@@ -105,7 +113,8 @@ Default `http://127.0.0.1:8420`. Override via project `CLAUDE.md` section `Memor
 |--------|------|---------|
 | `GET` | `/healthz` | Quick health check (no palace access) |
 | `GET` | `/diagnostic` | Full component health + contract violations + uptime/idle |
-| `GET` | `/wakeup?project=<name>` | L0 + L1 context for SessionStart injection |
+| `GET` | `/wakeup?project=<name>` | Cross-wing tunnel context for SessionStart injection |
+| `GET` | `/tunnels?wing=<name>` | Browse cross-project topic tunnels for a wing |
 | `POST` | `/search` | Smart-gated auto-recall (UserPromptSubmit) |
 | `POST` | `/fact_check` | Layer 4 fact-checking on writes |
 | `POST` | `/canary_write` | Test-only write (gated to `wing=canary`) |
@@ -117,7 +126,7 @@ The server is **read-only** for non-canary requests. All writes go through MemPa
 
 | Hook | Event | Matcher | Timeout | Behavior |
 |------|-------|---------|---------|----------|
-| `session-start` | SessionStart | (all) | 10s | `curl /wakeup` → inject as `additionalContext` |
+| `session-start` | SessionStart | (all) | 10s | `curl /wakeup` → inject tunnel context as `additionalContext` (L0+L1 handled by mempalace native hook) |
 | `user-prompt-submit` | UserPromptSubmit | (all) | 5s | Smart-gate → `curl /search` → inject `additionalContext` on hit |
 | `post-tool-use` | PostToolUse | `Edit\|Write\|MultiEdit` | 5s | Throttle + dedup → `curl /fact_check` |
 
@@ -135,8 +144,9 @@ All bridge hooks degrade gracefully — if the memory server is unreachable, the
 | Skill | Description |
 |-------|-------------|
 | `/rawgentic-memorypalace:recall <query>` | Semantic search over stored memories |
-| `/rawgentic-memorypalace:recall invalidate "<fact>"` | Mark a decision as historical |
-| `/rawgentic-memorypalace:recall timeline <entity>` | View decision history for an entity |
+| `/rawgentic-memorypalace:recall invalidate "<fact>"` | Mark a decision as historical (via MCP tool) |
+| `/rawgentic-memorypalace:recall timeline <entity>` | View decision history for an entity (via MCP tool) |
+| `/rawgentic-memorypalace:recall tunnels [wing]` | Browse cross-project topic tunnels |
 | `/rawgentic-memorypalace:upgrade` | Upgrade mempalace dependency, run migration |
 | `/rawgentic-memorypalace:memory-ui up/down/status` | Web frontend containers for browsing the palace |
 
@@ -149,9 +159,9 @@ pip install -e ".[dev]"
 .venv/bin/python -m pytest tests/ -v
 ```
 
-Test suite (171 unit tests):
-- `tests/test_adapter.py` — 26 tests for the versioned adapter (CONTRACT_VERSION=3)
-- `tests/test_server_slim.py` — 14 tests for the 6 HTTP endpoints + 410 Gone handlers
+Test suite (184 unit tests):
+- `tests/test_adapter.py` — 35 tests for the versioned adapter (CONTRACT_VERSION=3, tunnel context, dynamic contract)
+- `tests/test_server_slim.py` — 16 tests for the 7 HTTP endpoints + 410 Gone handlers
 - `tests/test_lib_sh.py` — 16 tests for bash hook helpers (smart gate, debounce, dedup)
 - `tests/test_hook_output_schema.py` — 17 tests validating all 4 hook scripts against Claude Code's hook-response schema (mock HTTP server, no live palace)
 - `tests/test_portable_hooks.py` — 10 tests for wrapper portability (no hardcoded paths, recursion guard, workspace auto-detection)
@@ -279,6 +289,32 @@ That's working as intended — the wrapper's Stop hook injects a `systemMessage`
 ### "Hook JSON output validation failed" on Stop hook
 
 The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason`) — NOT `hookSpecificOutput`. If you see this error, your wrapper is outdated. Update it by copying from the plugin: `cp <plugin-path>/hooks/mempalace-hook-wrapper.sh ~/.local/bin/`.
+
+## Changelog
+
+### v0.4.0 (2026-05-01)
+
+**Breaking:** `/wakeup` no longer returns L0+L1 layers. Mempalace's native SessionStart hook handles identity and memory context. Our plugin now contributes only cross-wing tunnel context at session start.
+
+- **Upgrade mempalace** 3.3.2 → 3.3.4 (HNSW bloat fix, cross-wing tunnels, Claude Code conversation tagging, PreCompact deadlock fix, ChromaDB reopen crash fix)
+- **Tunnel-only wakeup** — `wakeup()` returns cross-wing topic tunnel context instead of duplicating L0+L1. New `TunnelLink` dataclass, `find_tunnels_for_wing()` method, `_render_tunnel_context()` formatter
+- **New `/tunnels` endpoint** — `GET /tunnels?wing=<name>` returns structured tunnel data for a wing
+- **Dynamic MCP tool contract** — `CRITICAL_MCP_TOOLS` frozenset (6 tools) replaces hardcoded list; severity escalated to `error`; logs "mempalace exposes N MCP tools (6 critical)" at startup
+- **Recall skill fix** — `invalidate` and `timeline` subcommands now route through `mempalace_kg_invalidate` / `mempalace_kg_timeline` MCP tools (previously hit 410 Gone `/kg/*` endpoints)
+- **New `tunnels` recall subcommand** — `/rawgentic-memorypalace:recall tunnels [wing]` browses cross-project topic tunnels
+- **SessionStart hook rewritten** — only injects tunnel context; skips entirely when no project resolved
+- **Upgrade skill updated** — import verification uses 3.3.4 API paths (`palace_graph`, `fact_checker`); removes `Layer0`/`Layer1` (no longer used by adapter)
+
+### v0.3.0 (2026-04-24)
+
+- Initial public release (r3 architecture)
+- Three-plugin split: rawgentic + mempalace MCP + bridge
+- Adapter pattern with `CONTRACT_VERSION=3`, `MIN_VERSION=3.3.0`
+- Four recall layers: wakeup, auto-recall, proactive MCP, fact-checking
+- Slim HTTP server (~260 LOC, single-process ChromaDB gatekeeper)
+- Smart-gated hooks with debounce, stop-word filtering, per-file dedup
+- Save orchestration: throttled Stop hook + PreCompact fork-resume with blocking
+- Skills: recall (search/invalidate/timeline), upgrade, memory-ui
 
 ## License
 

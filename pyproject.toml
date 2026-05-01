@@ -1,6 +1,6 @@
 [project]
 name = "rawgentic-memorypalace"
-version = "0.1.0"
+version = "0.4.0"
 description = "Claude Code plugin providing long-term memory via dual backends (native ChromaDB + MemPalace) with A/B comparison framework"
 requires-python = ">=3.10"
 license = "MIT"

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Hook: SessionStart
-# Wakeup-only: calls /wakeup to inject context at session start/resume.
+# Tunnel-context only: L0+L1 handled by mempalace's native SessionStart hook.
+# This hook adds cross-wing topic tunnels for multi-project awareness.
 # Graceful degradation: exits 0 if memory server is unreachable.
 # NO set -e — graceful degradation requires non-zero returns to be handled explicitly.
 
@@ -15,11 +16,13 @@ CWD=$(echo "$HOOK_INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
 MEMPALACE_CLAUDE_WORKSPACE="${MEMPALACE_CLAUDE_WORKSPACE:-$CWD}"
 PROJECT=$(resolve_project "$CWD")
 
-# URL-encode project name (replace spaces with %20, etc.)
-PROJECT_ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "$PROJECT" 2>/dev/null) || true
-PROJECT_ENCODED="${PROJECT_ENCODED:-$PROJECT}"
-
 _debug "SessionStart: project=$PROJECT cwd=$CWD"
+
+# No project → no tunnel context to add
+if [[ -z "$PROJECT" || "$PROJECT" == "unknown" ]]; then
+    _debug "SessionStart: no project resolved — skipping tunnel context"
+    exit 0
+fi
 
 # Ensure server is running (lazy-start allowed on session start — timeout 10s)
 if ! ensure_server_running; then
@@ -27,22 +30,28 @@ if ! ensure_server_running; then
     exit 0
 fi
 
-# Call /wakeup
+# URL-encode project name
+PROJECT_ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "$PROJECT" 2>/dev/null) || true
+PROJECT_ENCODED="${PROJECT_ENCODED:-$PROJECT}"
+
+# Call /wakeup — now returns tunnel context only
 WAKEUP_RESPONSE=$(curl --silent --fail --connect-timeout 2 --max-time 8 \
     "${MEMORY_SERVER_URL}/wakeup?project=${PROJECT_ENCODED}" 2>/dev/null) || true
 
 if [[ -n "$WAKEUP_RESPONSE" ]]; then
-    # Validate JSON before outputting
     if echo "$WAKEUP_RESPONSE" | jq empty 2>/dev/null; then
-        _debug "SessionStart: wakeup response received"
-        # Claude Code schema: {hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: <string>}}
-        # Extract the text field from the wakeup response.
-        echo "$WAKEUP_RESPONSE" | jq '{
-            hookSpecificOutput: {
-                hookEventName: "SessionStart",
-                additionalContext: (.text // "")
-            }
-        }'
+        CONTEXT=$(echo "$WAKEUP_RESPONSE" | jq -r '.text // empty' 2>/dev/null) || true
+        if [[ -n "$CONTEXT" ]]; then
+            _debug "SessionStart: tunnel context received"
+            echo "$WAKEUP_RESPONSE" | jq '{
+                hookSpecificOutput: {
+                    hookEventName: "SessionStart",
+                    additionalContext: (.text // "")
+                }
+            }'
+        else
+            _debug "SessionStart: no tunnel context for this project"
+        fi
     else
         _debug "SessionStart: wakeup returned non-JSON — ignoring"
     fi

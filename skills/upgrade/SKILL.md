@@ -85,7 +85,7 @@ Run a quick import check using the correct Python to confirm the upgrade didn't 
 
 ```bash
 # Use the same python that has mempalace (pipx venv, system python3, or plugin venv)
-<python> -c "from mempalace.miner import get_collection; from mempalace.searcher import search_memories; from mempalace.layers import MemoryStack; print('All imports OK')"
+<python> -c "from mempalace.palace import get_collection; from mempalace.searcher import search_memories; from mempalace.palace_graph import find_tunnels, follow_tunnels; from mempalace.fact_checker import check_text; print('All imports OK')"
 ```
 
 If verification fails, warn the user that the upgrade may have broken compatibility.

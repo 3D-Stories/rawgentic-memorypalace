@@ -1,7 +1,7 @@
 ---
 name: rawgentic-memorypalace:recall
-description: Search long-term memory, invalidate stale decisions, or view decision timelines. Supports subcommands: search (default), invalidate, timeline.
-argument-hint: <query> | invalidate "<subject> decided <object>" | timeline <entity> | --project <name>
+description: Search long-term memory, invalidate stale decisions, view decision timelines, or browse cross-project tunnels. Supports subcommands: search (default), invalidate, timeline, tunnels.
+argument-hint: <query> | invalidate "<subject> decided <object>" | timeline <entity> | tunnels [wing] | --project <name>
 ---
 
 <role>
@@ -19,6 +19,7 @@ Search your long-term memory for past decisions, discoveries, and events.
 /rawgentic-memorypalace:recall <query> --project <project-name>
 /rawgentic-memorypalace:recall invalidate "<subject> decided <object>"
 /rawgentic-memorypalace:recall timeline <entity>
+/rawgentic-memorypalace:recall tunnels [wing]
 ```
 
 ## Instructions
@@ -29,6 +30,7 @@ Check the first word of the arguments to determine the subcommand:
 
 - **`invalidate`** → go to **Section 5: Invalidate a Decision**
 - **`timeline`** → go to **Section 6: View Timeline**
+- **`tunnels`** → go to **Section 7: Browse Cross-Project Tunnels**
 - **Anything else** → treat as a search query, continue to Step 2
 
 For search queries, extract:
@@ -154,32 +156,28 @@ Example: `/rawgentic-memorypalace:recall invalidate "chorestory decided use Zod"
 
 If the text doesn't contain "decided", tell the user: "Expected format: /rawgentic-memorypalace:recall invalidate \"<project> decided <description>\"" and STOP.
 
-**Call the endpoint:**
+**Call the MCP tool directly:**
 
-```bash
-curl --silent --fail --connect-timeout 2 --max-time 10 \
-  -X POST "MEMORY_SERVER_URL/kg/invalidate" \
-  -H "Content-Type: application/json" \
-  -d '{"subject": "SUBJECT", "predicate": "decided", "object": "OBJECT"}'
-```
-
-Replace `SUBJECT` and `OBJECT` with the parsed values. Escape any double quotes.
+Use the `mempalace_kg_invalidate` MCP tool with these parameters:
+- `subject`: the parsed subject
+- `predicate`: `"decided"`
+- `object`: the parsed object
 
 **Display confirmation:**
 
-If `found` is true:
+If the tool succeeds:
 ```
 Invalidated: **<subject>** decided **<object>**
 This decision is now marked as historical and will be demoted in search results.
 ```
 
-If `found` is false:
+If the tool reports no matching triple:
 ```
 No matching active decision found for: <subject> decided <object>
 The triple may not exist or may already be invalidated.
 ```
 
-Handle server errors the same as Section 3. STOP after displaying.
+If the MCP tool is not available (mempalace plugin not installed): tell the user "The mempalace MCP server is not connected. Ensure the mempalace plugin is installed and active." and STOP.
 
 ---
 
@@ -189,24 +187,18 @@ When the first argument is `timeline`, the second argument is the entity name.
 
 If no entity name is provided, ask the user: "Which project or entity timeline do you want to see?" and STOP.
 
-**Call the endpoint:**
+**Call the MCP tool directly:**
 
-```bash
-curl --silent --fail --connect-timeout 2 --max-time 10 \
-  "MEMORY_SERVER_URL/kg/timeline?entity=ENTITY_NAME"
-```
+Use the `mempalace_kg_timeline` MCP tool with:
+- `entity`: the entity name
 
 **Display the timeline** in chronological order (oldest to newest):
-
-```
-## Decision Timeline: <entity>
 
 | # | Date | Decision | Status |
 |---|------|----------|--------|
 | 1 | 2026-01-15 | decided: use PostgreSQL | current |
 | 2 | 2026-02-20 | decided: use Zod | invalidated |
 | 3 | 2026-03-01 | decided: use Valibot | current |
-```
 
 Each entry MUST show:
 - **valid_from** date (formatted as YYYY-MM-DD)
@@ -214,5 +206,51 @@ Each entry MUST show:
 - **Status:** "current" if `current: true`, "invalidated" if `current: false`
 
 If the timeline is empty: "No decision history found for <entity>." and STOP.
+
+If the MCP tool is not available: tell the user "The mempalace MCP server is not connected. Ensure the mempalace plugin is installed and active." and STOP.
+
+---
+
+### 7. Browse Cross-Project Tunnels
+
+When the first argument is `tunnels`, the optional second argument is a wing (project) name.
+
+Read the `MEMORY_SERVER_URL` from the `Memory Server Configuration` section of CLAUDE.md. Default to `http://127.0.0.1:8420`.
+
+**Call the tunnels endpoint:**
+
+If a wing name is provided:
+```bash
+curl --silent --fail --connect-timeout 2 --max-time 10 \
+  "MEMORY_SERVER_URL/tunnels?wing=WING_NAME"
+```
+
+If no wing name is provided, use the current active project from the rawgentic workspace. Determine this by reading `.rawgentic_workspace.json` and finding the most recently used active project.
+
+**Display results:**
+
+Parse the JSON response. The response shape is:
+```json
+{
+  "tunnels": [
+    {
+      "shared_topic": "documentation",
+      "connected_wings": ["chorestory", "grocusave", "rawgentic"],
+      "drawer_count": 18729
+    }
+  ]
+}
+```
+
+Format as a table:
+
+## Cross-Project Tunnels: <wing>
+
+| # | Shared Topic | Connected Projects | Memories |
+|---|--------------|-------------------|----------|
+| 1 | documentation | chorestory, grocusave, rawgentic | 18,729 |
+| 2 | testing | chorestory, nillerkgames | 342 |
+
+If no tunnels found: "No cross-project topic tunnels found for <wing>." and STOP.
 
 Handle server errors the same as Section 3. STOP after displaying.

@@ -64,19 +64,26 @@ class FactIssue:
     span: str = ""
 
 
+@dataclass
+class TunnelLink:
+    shared_topic: str
+    connected_wings: list[str]
+    drawer_count: int = 0
+
+
 class MempalaceAdapter:
     CONTRACT_VERSION = 3
     MIN_VERSION = "3.3.0"
     MAX_VERSION = "4.0.0"
+    CRITICAL_MCP_TOOLS = frozenset({
+        "mempalace_search",
+        "mempalace_add_drawer",
+        "mempalace_diary_write",
+        "mempalace_kg_query",
+        "mempalace_kg_add",
+        "mempalace_kg_invalidate",
+    })
     BEHAVIORAL_CONTRACT = {
-        "expected_mcp_tools": [
-            "mempalace_search",
-            "mempalace_add_drawer",
-            "mempalace_diary_write",
-            "mempalace_kg_query",
-            "mempalace_kg_add",
-            "mempalace_kg_invalidate",
-        ],
         "expected_save_interval": 15,
         "expected_palace_dir": "~/.mempalace/palace",
         "expected_kg_path": "~/.mempalace/knowledge_graph.sqlite3",
@@ -90,16 +97,46 @@ class MempalaceAdapter:
         self.palace_path = palace_path or os.path.expanduser("~/.mempalace/palace")
 
     def wakeup(self, project: str | None = None) -> WakeupContext:
-        try:
-            from mempalace.layers import Layer0, Layer1
-            l0 = Layer0().render()
-            l1 = Layer1(palace_path=self.palace_path, wing=project).generate()
-            text = f"{l0}\n\n{l1}"
-            # Token estimate: chars/4 ±25% — over for code-heavy, under for NL.
-            return WakeupContext(text=text, tokens=len(text) // 4, layers=["L0", "L1"])
-        except Exception as e:
-            logger.warning("wakeup failed: %s", e)
+        text = self._render_tunnel_context(project) if project else ""
+        if not text:
             return WakeupContext(text="", tokens=0, layers=[])
+        return WakeupContext(text=text, tokens=len(text) // 4, layers=["tunnels"])
+
+    def _render_tunnel_context(self, wing: str) -> str:
+        tunnels = self.find_tunnels_for_wing(wing)
+        if not tunnels:
+            return ""
+        lines = ["## Cross-project links"]
+        for t in tunnels[:5]:
+            others = ", ".join(t.connected_wings[:5])
+            suffix = (
+                f" (+{len(t.connected_wings) - 5} more)"
+                if len(t.connected_wings) > 5 else ""
+            )
+            lines.append(
+                f"- **{t.shared_topic}**: shared with {others}{suffix}"
+                f" ({t.drawer_count} memories)"
+            )
+        return "\n".join(lines)
+
+    def find_tunnels_for_wing(self, wing: str) -> list[TunnelLink]:
+        try:
+            from mempalace.palace_graph import find_tunnels
+            raw = find_tunnels(wing_a=wing)
+            return [
+                TunnelLink(
+                    shared_topic=t.get("room", ""),
+                    connected_wings=[
+                        w for w in t.get("wings", []) if w != wing
+                    ],
+                    drawer_count=t.get("count", 0),
+                )
+                for t in raw
+                if t.get("room")
+            ]
+        except Exception as e:
+            logger.warning("find_tunnels_for_wing failed: %s", e)
+            return []
 
     def health(self) -> HealthStatus:
         try:
@@ -249,18 +286,22 @@ class MempalaceAdapter:
         except Exception:
             pass
 
-        # Check expected MCP tools are exposed by mempalace
+        # Check critical MCP tools are exposed by mempalace
         try:
             from mempalace import mcp_server as _mcp
             available_tools = set(getattr(_mcp, "TOOLS", {}).keys())
-            for tool_name in self.BEHAVIORAL_CONTRACT.get("expected_mcp_tools", []):
+            for tool_name in self.CRITICAL_MCP_TOOLS:
                 if tool_name not in available_tools:
                     violations.append(ContractViolation(
                         field=f"mcp_tool:{tool_name}",
                         expected="present",
                         actual="missing",
-                        severity="warning",
+                        severity="error",
                     ))
+            logger.info(
+                "mempalace exposes %d MCP tools (%d critical)",
+                len(available_tools), len(self.CRITICAL_MCP_TOOLS),
+            )
         except Exception:
             pass
 
