@@ -256,7 +256,7 @@ class TestBehavioralContract:
         assert any(v.field == "mempalace_module" for v in violations)
 
     def test_behavioral_contract_lists_expected_mcp_tools(self):
-        tools = MempalaceAdapter.BEHAVIORAL_CONTRACT["expected_mcp_tools"]
+        tools = MempalaceAdapter.CRITICAL_MCP_TOOLS
         assert "mempalace_search" in tools
         assert "mempalace_add_drawer" in tools
         assert "mempalace_diary_write" in tools
@@ -264,19 +264,47 @@ class TestBehavioralContract:
     def test_verify_detects_missing_mcp_tool(self, isolated_palace, monkeypatch):
         import sys
         import mempalace
-        import mempalace.mcp_server  # force submodule into parent's __dict__  # noqa: F401
+        import mempalace.mcp_server  # noqa: F401
         from unittest.mock import MagicMock
         fake_mcp = MagicMock()
-        # Only expose mempalace_search — everything else should be flagged missing
         fake_mcp.TOOLS = {"mempalace_search": object()}
-        # Replace both the sys.modules entry and the parent's attr so that
-        # `from mempalace import mcp_server` resolves to our fake.
         monkeypatch.setitem(sys.modules, "mempalace.mcp_server", fake_mcp)
         monkeypatch.setattr(mempalace, "mcp_server", fake_mcp)
         adapter = MempalaceAdapter(palace_path=str(isolated_palace))
         violations = adapter.verify_behavioral_contract()
         missing_fields = [v.field for v in violations]
         assert "mcp_tool:mempalace_add_drawer" in missing_fields
+        tool_violations = [v for v in violations if v.field.startswith("mcp_tool:")]
+        assert all(v.severity == "error" for v in tool_violations)
+
+    def test_critical_tools_is_subset_of_available(self):
+        """Critical tools are the ones the adapter directly calls."""
+        critical = MempalaceAdapter.CRITICAL_MCP_TOOLS
+        assert "mempalace_search" in critical
+        assert "mempalace_add_drawer" in critical
+        assert "mempalace_diary_write" in critical
+        assert len(critical) <= 10
+
+    def test_verify_reports_tool_count(self, isolated_palace):
+        adapter = MempalaceAdapter(palace_path=str(isolated_palace))
+        violations = adapter.verify_behavioral_contract()
+        critical_missing = [v for v in violations if v.field.startswith("mcp_tool:")]
+        assert critical_missing == []
+
+    def test_verify_reports_missing_critical_tool(self, isolated_palace, monkeypatch):
+        import sys
+        import mempalace
+        import mempalace.mcp_server  # noqa: F401
+        from unittest.mock import MagicMock
+        fake_mcp = MagicMock()
+        fake_mcp.TOOLS = {"mempalace_search": object()}
+        monkeypatch.setitem(sys.modules, "mempalace.mcp_server", fake_mcp)
+        monkeypatch.setattr(mempalace, "mcp_server", fake_mcp)
+        adapter = MempalaceAdapter(palace_path=str(isolated_palace))
+        violations = adapter.verify_behavioral_contract()
+        missing = [v for v in violations if v.field.startswith("mcp_tool:")]
+        assert len(missing) >= 2
+        assert all(v.severity == "error" for v in missing)
 
 
 class TestVersionComparison:

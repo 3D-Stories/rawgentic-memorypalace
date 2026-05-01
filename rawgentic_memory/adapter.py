@@ -68,15 +68,15 @@ class MempalaceAdapter:
     CONTRACT_VERSION = 3
     MIN_VERSION = "3.3.0"
     MAX_VERSION = "4.0.0"
+    CRITICAL_MCP_TOOLS = frozenset({
+        "mempalace_search",
+        "mempalace_add_drawer",
+        "mempalace_diary_write",
+        "mempalace_kg_query",
+        "mempalace_kg_add",
+        "mempalace_kg_invalidate",
+    })
     BEHAVIORAL_CONTRACT = {
-        "expected_mcp_tools": [
-            "mempalace_search",
-            "mempalace_add_drawer",
-            "mempalace_diary_write",
-            "mempalace_kg_query",
-            "mempalace_kg_add",
-            "mempalace_kg_invalidate",
-        ],
         "expected_save_interval": 15,
         "expected_palace_dir": "~/.mempalace/palace",
         "expected_kg_path": "~/.mempalace/knowledge_graph.sqlite3",
@@ -249,18 +249,22 @@ class MempalaceAdapter:
         except Exception:
             pass
 
-        # Check expected MCP tools are exposed by mempalace
+        # Check critical MCP tools are exposed by mempalace
         try:
             from mempalace import mcp_server as _mcp
             available_tools = set(getattr(_mcp, "TOOLS", {}).keys())
-            for tool_name in self.BEHAVIORAL_CONTRACT.get("expected_mcp_tools", []):
+            for tool_name in self.CRITICAL_MCP_TOOLS:
                 if tool_name not in available_tools:
                     violations.append(ContractViolation(
                         field=f"mcp_tool:{tool_name}",
                         expected="present",
                         actual="missing",
-                        severity="warning",
+                        severity="error",
                     ))
+            logger.info(
+                "mempalace exposes %d MCP tools (%d critical)",
+                len(available_tools), len(self.CRITICAL_MCP_TOOLS),
+            )
         except Exception:
             pass
 
