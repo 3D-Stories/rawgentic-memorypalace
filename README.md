@@ -1,6 +1,6 @@
 # rawgentic-memorypalace
 
-**v0.4.0** · Claude Code plugin providing long-term memory powered by [MemPalace](https://github.com/milla-jovovich/mempalace). Bridges Claude Code's hook system to MemPalace's Python API via a slim HTTP gatekeeper + adapter layer, with native MemPalace hooks handling ingest.
+**v0.4.2** · Claude Code plugin providing long-term memory powered by [MemPalace](https://github.com/milla-jovovich/mempalace). Bridges Claude Code's hook system to MemPalace's Python API via a slim HTTP gatekeeper + adapter layer, with native MemPalace hooks handling ingest.
 
 ## Architecture (r3)
 
@@ -291,6 +291,14 @@ That's working as intended — the wrapper's Stop hook injects a `systemMessage`
 The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason`) — NOT `hookSpecificOutput`. If you see this error, your wrapper is outdated. Update it by copying from the plugin: `cp <plugin-path>/hooks/mempalace-hook-wrapper.sh ~/.local/bin/`.
 
 ## Changelog
+
+### v0.4.2 (2026-05-13)
+
+- **Hook commands use exec form.** `hooks/hooks.json` now declares `args: []` on every entry so Claude Code invokes hooks directly via `execv` instead of `/bin/sh -c "string"`. Permanently eliminates the shell-quoting class of bugs (per [Claude Code v2.1.139 hooks reference](https://code.claude.com/docs/en/hooks.md)). Backward compatible — `args` is ignored on older Claude Code versions.
+
+### v0.4.1 (2026-05-13)
+
+- **Fix `${CLAUDE_PLUGIN_ROOT}` not expanding in hook commands.** Each command in `hooks/hooks.json` was wrapped in literal single quotes (`"'${CLAUDE_PLUGIN_ROOT}/hooks/...'"`); a recent Claude Code update changed env-var expansion behavior, and `/bin/sh -c` then tried to exec a file literally named `${CLAUDE_PLUGIN_ROOT}/hooks/...`. `SessionStart`, `UserPromptSubmit`, and `PostToolUse` were all failing with `not found`. Removed the wrapping quotes so the variable expands correctly. `marketplace.json` version synced with `plugin.json`.
 
 ### v0.4.0 (2026-05-01)
 
