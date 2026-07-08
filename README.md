@@ -293,7 +293,7 @@ The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason
 
 ## Changelog
 
-### v0.4.5 (2026-07-09)
+### v0.4.5 (2026-07-08)
 
 - **PreCompact degraded path (rawgentic#306) + dead fail-closed block fixed.** The PreCompact block-on-save-failure path was dead code — `SAVE_OUTPUT=$(...) || true` left `SAVE_EXIT` always 0, and a mempalace outage exits the fork 0 anyway (failure reported only in prose) — so every fork failure silently *approved with no save*. Success now requires exit 0 AND the "Saved … drawer/diary" confirmation; on failure the session transcript is copied to a local fallback (`MEMPALACE_PRECOMPACT_FALLBACK_DIR`, default `~/.mempalace-wrapper-state/precompact-fallback/`) and compaction is approved with a loud DEGRADED reason (stderr + log + reason); compaction blocks only when BOTH the mempalace save and the local fallback fail. Red-first: outage, both-fail, prose-failure, and healthy-path pin tests.
 

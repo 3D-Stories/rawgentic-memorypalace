@@ -477,7 +477,7 @@ class TestWrapperPreCompactDegradedPath:
     def _home_with_transcript(self, tmp_path, plant=True):
         home = tmp_path / "home"
         proj = home / ".claude" / "projects" / "-tmp-fake-ws"
-        proj.mkdir(parents=True)
+        proj.mkdir(parents=True, exist_ok=True)
         if plant:
             (proj / f"{self.SID}.jsonl").write_text('{"type":"turn"}\n' * 5)
         return str(home)
@@ -534,3 +534,51 @@ class TestWrapperPreCompactDegradedPath:
         assert data["decision"] == "approve"
         assert "degraded" not in data["reason"].lower()
         assert not list(fb.glob("*.jsonl"))  # no fallback on success
+
+    def test_negation_prose_is_not_a_confirmation(self, tmp_path):
+        """Step 11 finding 1: failure prose containing 'saved…drawer' must not
+        pass the confirmation check — that would re-open the silent-loss hole."""
+        for prose in ("I have NOT saved any drawers or diary entries.",
+                      "Attempted the save but nothing was saved - the drawer tool errored out.",
+                      "Saved 0 drawers + no diary (mempalace unreachable)"):
+            result, fb = self._run(tmp_path, exit_code=0, output=prose)
+            data = json.loads(result.stdout.strip())
+            assert data["decision"] == "approve", prose
+            assert "degraded" in data["reason"].lower(), prose
+
+    def test_session_id_with_path_chars_is_sanitized(self, tmp_path):
+        """Step 11 finding 2: a session_id containing / must not escape the
+        fallback dir."""
+        home = self._home_with_transcript(tmp_path, plant=False)
+        fb = tmp_path / "fallback"
+        result = _run_hook("mempalace-hook-wrapper.sh",
+                           {"session_id": "../../evil", "cwd": "/tmp/fake-ws"},
+                           19999,
+                           env_extras={"HOME": home,
+                                       "CLAUDE_BIN": self._stub(tmp_path, 1, "down"),
+                                       "MEMPALACE_PRECOMPACT_FALLBACK_DIR": str(fb),
+                                       "MEMPALACE_PRECOMPACT_TIMEOUT_SECS": "10"},
+                           args=["precompact"])
+        assert result.returncode == 0
+        # nothing may be written outside the fallback dir
+        assert not (tmp_path.parent / "evil-marker").exists()
+        assert not list(tmp_path.glob("evil*"))
+
+    def test_empty_transcript_approves_degraded_not_block(self, tmp_path):
+        """Step 11 finding 3: a zero-byte transcript has nothing to preserve —
+        approve degraded rather than wedging the run."""
+        home = self._home_with_transcript(tmp_path, plant=False)
+        proj = Path(home) / ".claude" / "projects" / "-tmp-fake-ws"
+        (proj / f"{self.SID}.jsonl").write_text("")
+        fb = tmp_path / "fallback"
+        result = _run_hook("mempalace-hook-wrapper.sh",
+                           {"session_id": self.SID, "cwd": "/tmp/fake-ws"},
+                           19999,
+                           env_extras={"HOME": home,
+                                       "CLAUDE_BIN": self._stub(tmp_path, 1, "down"),
+                                       "MEMPALACE_PRECOMPACT_FALLBACK_DIR": str(fb),
+                                       "MEMPALACE_PRECOMPACT_TIMEOUT_SECS": "10"},
+                           args=["precompact"])
+        data = json.loads(result.stdout.strip())
+        assert data["decision"] == "approve"
+        assert "degraded" in data["reason"].lower()

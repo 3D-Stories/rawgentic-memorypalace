@@ -28,6 +28,8 @@ if [[ "$MODE" != "precompact" && "$MODE" != "stop" ]]; then
 fi
 INPUT=$(cat)
 SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null) || true
+# Path-safety: session_id is interpolated into marker + fallback filenames.
+SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'A-Za-z0-9-')
 STOP_ACTIVE=$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // empty' 2>/dev/null) || true
 HOOK_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
 LOG="$HOME/.mempalace-hook-wrapper.log"
@@ -127,10 +129,14 @@ SAVE_EXIT=$?
 log "fork exit=$SAVE_EXIT"
 printf '%s\n---\n' "$SAVE_OUTPUT" | tail -20 >> "$LOG"
 
-# Success requires BOTH a clean exit AND the confirmation the prompt demands —
-# a mempalace outage leaves claude -p exiting 0 while reporting failure in prose.
+# Success requires BOTH a clean exit AND the positive confirmation the prompt
+# demands ("Saved N drawers + diary", N >= 1) — a mempalace outage leaves
+# claude -p exiting 0 while reporting failure in prose, and failure prose can
+# contain "saved…drawer" ("I have NOT saved any drawers"), so the pattern is
+# positive-only. A false NEGATIVE is safe: it fires the degraded path, which
+# preserves the transcript and still approves.
 SAVE_OK=0
-if [[ $SAVE_EXIT -eq 0 ]] && printf '%s' "$SAVE_OUTPUT" | grep -qiE 'saved.*(drawer|diary)'; then
+if [[ $SAVE_EXIT -eq 0 ]] && printf '%s' "$SAVE_OUTPUT" | grep -qiE 'saved [1-9][0-9]* drawers?'; then
     SAVE_OK=1
 fi
 
@@ -150,9 +156,21 @@ for f in "$HOME"/.claude/projects/*/"$SESSION_ID".jsonl; do
     [[ -f "$f" ]] && TRANSCRIPT="$f" && break
 done
 
+# Zero-byte transcript: nothing to preserve — degraded approve, never a wedge.
+if [[ -n "$TRANSCRIPT" && ! -s "$TRANSCRIPT" ]]; then
+    MSG="PreCompact DEGRADED: mempalace save failed (fork exit $SAVE_EXIT) and the session transcript at $TRANSCRIPT is empty — nothing to preserve. Compaction allowed. See $LOG."
+    echo "⚠️  $MSG" >&2
+    log "$MSG"
+    R=$(json_escape "$MSG")
+    printf '{"decision":"approve","reason":%s}' "$R"
+    exit 0
+fi
+
 FALLBACK_OK=0
 FALLBACK_DEST=""
 if [[ -n "$TRANSCRIPT" ]]; then
+    # ponytail: fallback dir grows unbounded across repeated outage compacts —
+    # operator cleanup; add pruning if it ever matters.
     mkdir -p "$FALLBACK_DIR" 2>/dev/null || true
     FALLBACK_DEST="$FALLBACK_DIR/${SESSION_ID}-$(date +%s).jsonl"
     if cp "$TRANSCRIPT" "$FALLBACK_DEST" 2>/dev/null && [[ -s "$FALLBACK_DEST" ]]; then
