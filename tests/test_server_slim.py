@@ -64,6 +64,58 @@ class TestSearch:
         assert "low" not in data["additionalContext"]
 
 
+class TestSearchHeaders:
+    """rawgentic#305 — /search honors hook headers; body/defaults preserved."""
+
+    def _fake(self):
+        from rawgentic_memory.adapter import SearchResult
+        return [
+            SearchResult(content="own-high", similarity=0.9, project="my_proj"),
+            SearchResult(content="own-mid", similarity=0.5, project="my_proj"),
+            SearchResult(content="foreign", similarity=0.9, project="other_proj"),
+            SearchResult(content="global", similarity=0.9, project=""),
+        ]
+
+    def _post(self, client, headers=None, body=None):
+        from unittest.mock import patch
+        with patch.object(client.app.state.adapter, "search",
+                          return_value=self._fake()):
+            return client.post("/search",
+                               json=body or {"prompt": "q"},
+                               headers=headers or {})
+
+    def test_header_threshold_overrides_default(self, client):
+        """X-Similarity-Threshold header raises the filter above 0.3."""
+        data = self._post(client, headers={"X-Similarity-Threshold": "0.7"}).json()
+        assert "own-high" in data["additionalContext"]
+        assert "own-mid" not in data["additionalContext"]
+
+    def test_malformed_threshold_header_falls_back(self, client):
+        """Unparseable header never 500s — falls back to body/default."""
+        resp = self._post(client, headers={"X-Similarity-Threshold": "banana"})
+        assert resp.status_code == 200
+        assert "own-mid" in resp.json()["additionalContext"]  # default 0.3 applies
+
+    def test_project_header_scopes_results(self, client):
+        """X-Project keeps own-project (normalized -/_) and project-less hits only."""
+        data = self._post(client, headers={"X-Project": "my-proj"}).json()
+        assert "own-high" in data["additionalContext"]
+        assert "global" in data["additionalContext"]
+        assert "foreign" not in data["additionalContext"]
+
+    def test_no_headers_body_semantics_unchanged(self, client):
+        """Explicit callers without headers keep body min_similarity + no scoping."""
+        data = self._post(client, body={"prompt": "q", "min_similarity": 0.5}).json()
+        assert "foreign" in data["additionalContext"]  # unscoped
+        assert "own-mid" in data["additionalContext"]  # 0.5 boundary inclusive
+
+    def test_max_results_header_caps_results(self, client):
+        """X-Max-Results header bounds injected results."""
+        data = self._post(client, headers={"X-Max-Results": "1"}).json()
+        ctx = data["additionalContext"]
+        assert sum(s in ctx for s in ("own-high", "own-mid", "foreign", "global")) == 1
+
+
 class TestWakeup:
     def test_wakeup_no_project_returns_empty(self, client):
         resp = client.get("/wakeup")

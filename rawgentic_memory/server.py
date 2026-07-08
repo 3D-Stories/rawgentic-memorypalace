@@ -90,11 +90,32 @@ def build_app(
         prompt = body.get("prompt", "")
         if not prompt:
             return JSONResponse({"additionalContext": ""})
-        min_similarity = float(body.get("min_similarity", 0.3))
-        limit = int(body.get("limit", 10))
+        # rawgentic#305: the recall hook passes its knobs as headers (it POSTs the
+        # raw hook input, so it cannot put them in the body). Header wins over
+        # body; malformed values fall back rather than 500.
+        try:
+            min_similarity = float(request.headers["x-similarity-threshold"])
+        except (KeyError, ValueError):
+            min_similarity = float(body.get("min_similarity", 0.3))
+        try:
+            limit = int(request.headers["x-max-results"])
+        except (KeyError, ValueError):
+            limit = int(body.get("limit", 10))
+        project_scope = request.headers.get("x-project", "").strip()
         results = adapter.search(query=prompt, limit=limit)
         # Filter by similarity threshold
         results = [r for r in results if r.similarity >= min_similarity]
+        if project_scope:
+            # Stored memories use underscore project names; the hook resolves
+            # hyphenated workspace names — compare normalized. Project-less
+            # (global/diary) memories stay visible under scoping.
+            def _norm(s: str) -> str:
+                return s.replace("-", "_").lower()
+
+            scope = _norm(project_scope)
+            results = [r for r in results
+                       if not r.project or _norm(r.project) == scope]
+        results = results[:limit] if limit >= 0 else results
         if not results:
             return JSONResponse({"additionalContext": ""})
         # Format as structured context for hook injection
