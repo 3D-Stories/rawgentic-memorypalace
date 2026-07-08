@@ -293,6 +293,10 @@ The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason
 
 ## Changelog
 
+### v0.4.5 (2026-07-08)
+
+- **PreCompact degraded path (rawgentic#306) + dead fail-closed block fixed.** The PreCompact block-on-save-failure path was dead code — `SAVE_OUTPUT=$(...) || true` left `SAVE_EXIT` always 0, and a mempalace outage exits the fork 0 anyway (failure reported only in prose) — so every fork failure silently *approved with no save*. Success now requires exit 0 AND the "Saved … drawer/diary" confirmation; on failure the session transcript is copied to a local fallback (`MEMPALACE_PRECOMPACT_FALLBACK_DIR`, default `~/.mempalace-wrapper-state/precompact-fallback/`) and compaction is approved with a loud DEGRADED reason (stderr + log + reason); compaction blocks only when BOTH the mempalace save and the local fallback fail. Red-first: outage, both-fail, prose-failure, and healthy-path pin tests.
+
 ### v0.4.4 (2026-07-08)
 
 - **Recall tuning (rawgentic#305).** Fixed a silent transport bug: the recall hook sent `X-Similarity-Threshold`/`X-Max-Results` as HTTP headers but `/search` only read the JSON body, so `RECALL_SIMILARITY_THRESHOLD` never applied and recall always filtered at 0.3. `/search` now honors those headers (body/defaults preserved for explicit callers). Default threshold raised 0.30 → 0.45. New `RECALL_PROJECT_SCOPE` knob (default on) scopes per-prompt recall to the bound project via a new `X-Project` header — normalized `-`/`_` matching, project-less (global/diary) memories stay visible; explicit searches (MCP tools, direct `/search`) unaffected. `marketplace.json` version re-synced with `plugin.json` (drift left by v0.4.3).
