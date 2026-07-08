@@ -366,6 +366,19 @@ class TestWrapperStopSchema:
         stripped = result.stdout.strip()
         assert stripped == "{}"
 
+    def test_due_message_states_mempalace_authority(self):
+        """rawgentic#304: the auto-save instruction states MemPalace is the
+        authoritative store and scopes the native auto-memory rule to
+        substantive content (frozen pointer index tolerated) — the old
+        absolute "Do NOT write ... native auto-memory" ban contradicted the
+        harness's own memory behavior on every save."""
+        result = self._run_wrapper({"session_id": "schema-test-stop-authority"})
+        data = json.loads(result.stdout.strip())
+        msg = data["systemMessage"]
+        assert "authoritative" in msg
+        assert "rawgentic#304" in msg
+        assert "Do NOT write to Claude Code's native auto-memory" not in msg
+
 
 class TestWrapperPreCompactSchema:
     """PreCompact mode output schema validation (no fork — tests structure only)."""

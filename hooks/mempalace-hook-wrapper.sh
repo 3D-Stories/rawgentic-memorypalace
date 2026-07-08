@@ -47,7 +47,7 @@ AUTO_SAVE_REASON='AUTO-SAVE checkpoint (MemPalace). Save this session'\''s key c
 1. mempalace_diary_write — AAAK-compressed session summary
 2. mempalace_add_drawer — verbatim quotes, decisions, code snippets
 3. mempalace_kg_add — entity relationships (optional)
-Do NOT write to Claude Code'\''s native auto-memory (.md files). Continue conversation after saving.'
+MemPalace is the authoritative memory store (owner decision 2026-07-08, rawgentic#304): save substantive content ONLY via the MCP tools above — never as new Claude Code native auto-memory .md files (the native MEMORY.md is a frozen thin pointer index). Continue conversation after saving.'
 
 # --- Recursion guard: post-save Stop refire OR our own forked-resume call ---
 if [[ "$STOP_ACTIVE" == "true" ]] || [[ -n "${MEMPALACE_SAVE_IN_PROGRESS:-}" ]]; then
