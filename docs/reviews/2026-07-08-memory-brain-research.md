@@ -126,6 +126,45 @@ per-repo scoping. It does NOT cover: durable cross-project recall, typed queries
   the model for our promote-pass (cheap, scheduled, not per-write).
 - RL-trained memory controllers (Memory-R1, MemAgent): not actionable for this stack.
 
+## 3b. Paid / commercial options (owner-requested augmentation, 2026-07-08)
+
+Evaluated against the same disqualifiers plus the owner's self-host preference. None
+changes the recommendation; two earn a role at the edges.
+
+- **Notion** (paid workspace + official hosted MCP server): the 2026 MCP server
+  converts pages to compressed markdown so Claude reads them without blowing context;
+  OAuth, respects workspace permissions. As an agent-memory ENGINE it has no typed
+  schema, no supersession, no telemetry, cloud-only — and workspace memories (infra
+  details, incident context) would egress to a third party. Verdict: good human
+  knowledge surface, not an agent memory engine. (developers.notion.com/guides/mcp;
+  practitioner writeups.)
+- **Obsidian** (app free; Sync ~$4–8/mo, Publish, commercial license paid): local
+  markdown vault; Claude Code reads it directly with no plugin or MCP. Practitioner
+  setups (obsidian-mind, MCPVault, obsidian-llm-memory) report 30–50k tokens/session
+  vs 70–80k rebuilding context (~40% savings claim, self-reported). No typed schema,
+  no bi-temporal facts, no telemetry, no dedup — it is files. BUT: because the brain's
+  store stays plain-text-exportable, **paid Obsidian Sync is a candidate later add-on
+  for cross-machine memory sync and a browsable vault view** at near-zero integration
+  cost. Not the engine; a possible window onto it.
+- **supermemory** (usage-based; ~$19/mo Pro): deepest Claude MCP integration in the
+  paid PKM class, fastest path to working integration; PKM/solo-creator oriented,
+  cloud-only, no telemetry/typed supersession. Same egress objection as Notion.
+- **mem0 Pro** ($19/mo for 10K memories; graph features require the $249/mo tier):
+  the hosted tier is the version whose reliability the ecosystem actually praises
+  (SOC 2, HIPAA) — but $249/mo for graph, cloud egress, and the same 49%-vs-94.4%
+  benchmark ambiguity. Self-host remains second-class.
+- **Zep Cloud** ($25/mo graph tier; ~$15/M tokens at scale): the ONLY Zep now —
+  Community Edition self-host is deprecated. Best temporal accuracy in class (63.8%
+  LongMemEval), but the reported ~600k-token conversation footprint, ~4s latency, and
+  full cloud dependency stand.
+
+**Paid-options verdict:** every cloud service fails the self-host preference and
+ships no retrieval telemetry, while adding data egress of workspace internals.
+Obsidian Sync (view/sync layer over the brain's plain-text export) and Notion (human
+docs surface, not memory) are the only ones with a sensible role — both optional,
+neither in the critical path. Recorded as an explicit non-goal in the scope doc's
+"Not in scope" (Obsidian vault view possible later at near-zero cost).
+
 ### A note on benchmark numbers
 The same system scores wildly differently across sources — mem0 is reported at 49.0%
 LongMemEval by a third-party comparison and 94.4% by its own 2026 blog; mempalace's
@@ -197,3 +236,4 @@ demand-loaded caches derived from the brain, never authoritative content.
 - https://particula.tech/blog/agent-memory-frameworks-tested-mem0-zep-letta-cognee-2026
 - https://arxiv.org/html/2603.11768v1 (SSGM) · https://arxiv.org/pdf/2601.07468 (temporal semantic memory) · https://arxiv.org/html/2601.09913v1 (continuum architectures)
 - https://www.mindstudio.ai/blog/what-is-claude-code-auto-memory · https://claudefa.st/blog/guide/mechanics/auto-memory
+- Paid options: https://developers.notion.com/guides/mcp/overview · https://github.com/breferrari/obsidian-mind · https://github.com/CodyLiska/obsidian-llm-memory · https://hjarni.com/blog/mem0-vs-supermemory-vs-hjarni · https://atlan.com/know/mem0-alternatives/ · https://evermind.ai/blogs/zep-alternative
