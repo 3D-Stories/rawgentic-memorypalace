@@ -99,7 +99,7 @@ Default `http://127.0.0.1:8420`. Override via project `CLAUDE.md` section `Memor
 | `RECALL_DEBOUNCE_SECS` | 30 | Minimum seconds between `/search` calls per project |
 | `RECALL_SIMILARITY_THRESHOLD` | 0.45 | Min similarity score for results to inject |
 | `RECALL_MAX_RESULTS` | 5 | Max results per `/search` (bounds context budget) |
-| `RECALL_PROJECT_SCOPE` | 1 | Scope per-prompt recall to the bound project (0 = off); explicit searches are never scoped |
+| `RECALL_PROJECT_SCOPE` | 1 | Scope per-prompt recall to the bound project (0 = off); explicit searches are never scoped. Known limitation: project resolution uses the workspace-wide most-recent project, so concurrent sessions can scope to the wrong project ([#54](https://github.com/3D-Stories/rawgentic-memorypalace/issues/54)) |
 | `FACT_CHECK_DEBOUNCE_SECS` | 60 | Minimum seconds between `/fact_check` calls |
 | `MEMPALACE_CLAUDE_WORKSPACE` | auto-detected from `.cwd` | Override workspace root for session registry lookups and PreCompact fork |
 | `MEMPALACE_STOP_BLOCK_INTERVAL_SECS` | 900 (15 min) | Minimum seconds between Stop hook save injections |

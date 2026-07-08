@@ -115,6 +115,19 @@ class TestSearchHeaders:
         ctx = data["additionalContext"]
         assert sum(s in ctx for s in ("own-high", "own-mid", "foreign", "global")) == 1
 
+    def test_overfetches_so_filters_cannot_starve_results(self, client):
+        """Adapter is asked for more than limit; filters shrink, slice caps.
+
+        Without over-fetch, foreign/sub-threshold hits occupying the top-N
+        adapter ranks would starve own-project recall entirely.
+        """
+        from unittest.mock import patch
+        with patch.object(client.app.state.adapter, "search",
+                          return_value=self._fake()) as spy:
+            client.post("/search", json={"prompt": "q"},
+                        headers={"X-Max-Results": "2", "X-Project": "my-proj"})
+        assert spy.call_args.kwargs["limit"] >= 8  # 2 requested, ≥4x fetched
+
 
 class TestWakeup:
     def test_wakeup_no_project_returns_empty(self, client):

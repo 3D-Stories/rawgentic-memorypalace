@@ -99,7 +99,9 @@ def build_app(
         min_similarity = _hdr("x-similarity-threshold", float, float(body.get("min_similarity", 0.3)))
         limit = _hdr("x-max-results", int, int(body.get("limit", 10)))
         project_scope = request.headers.get("x-project", "").strip()
-        results = adapter.search(query=prompt, limit=limit)
+        # Over-fetch so threshold/project filters can't starve recall when
+        # foreign hits occupy the top ranks; the slice below re-caps to limit.
+        results = adapter.search(query=prompt, limit=max(limit, 1) * 4)
         # Filter by similarity threshold
         results = [r for r in results if r.similarity >= min_similarity]
         if project_scope:
