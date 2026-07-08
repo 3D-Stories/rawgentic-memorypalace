@@ -30,6 +30,8 @@ class _MockHandler(BaseHTTPRequestHandler):
 
     # Class-level flag: if True, return populated responses; if False, empty
     populated = True
+    # rawgentic#305: headers of the most recent /search request, for assertions
+    last_search_headers = None
 
     def log_message(self, *args):
         pass
@@ -50,6 +52,7 @@ class _MockHandler(BaseHTTPRequestHandler):
         self.rfile.read(length)
 
         if self.path.startswith("/search"):
+            _MockHandler.last_search_headers = dict(self.headers)
             if self.populated:
                 self._respond(200, {
                     "additionalContext": "Found 2 results about hook testing."
@@ -232,6 +235,41 @@ class TestUserPromptSubmitSchema:
         }, self.PORT)
         data = json.loads(result.stdout.strip())
         assert data["hookSpecificOutput"]["additionalContext"] != ""
+
+
+class TestUserPromptSubmitProjectScoping:
+    """rawgentic#305 — hook sends X-Project when scoping is on (the default)."""
+
+    PORT = 18539
+
+    @pytest.fixture(autouse=True)
+    def _server(self):
+        _MockHandler.last_search_headers = None
+        server, _ = _start_mock_server(self.PORT, populated=True)
+        yield
+        server.shutdown()
+
+    _PROMPT = "Tell me about the hook architecture and how recall scoping works here"
+
+    def test_x_project_header_sent_by_default(self):
+        result = _run_hook("user-prompt-submit", {
+            "cwd": "/tmp/nowhere/my-proj",
+            "prompt": self._PROMPT,
+        }, self.PORT)
+        assert result.returncode == 0
+        headers = _MockHandler.last_search_headers
+        assert headers is not None, "hook never reached /search"
+        assert headers.get("X-Project") == "my-proj"
+
+    def test_x_project_header_omitted_when_scope_off(self):
+        result = _run_hook("user-prompt-submit", {
+            "cwd": "/tmp/nowhere/my-proj",
+            "prompt": self._PROMPT,
+        }, self.PORT, env_extras={"RECALL_PROJECT_SCOPE": "0"})
+        assert result.returncode == 0
+        headers = _MockHandler.last_search_headers
+        assert headers is not None, "hook never reached /search"
+        assert "X-Project" not in headers
 
 
 class TestUserPromptSubmitEmptySchema:

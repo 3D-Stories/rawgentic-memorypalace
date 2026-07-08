@@ -49,6 +49,28 @@ def run_bash(snippet: str, env_overrides: dict | None = None, state_dir: str | N
     )
 
 
+class TestRecallDefaults:
+    """rawgentic#305 — recall knob defaults raised/added, still env-overridable."""
+
+    def test_similarity_threshold_default_is_045(self):
+        result = run_bash("echo $RECALL_SIMILARITY_THRESHOLD")
+        assert result.stdout.strip() == "0.45"
+
+    def test_similarity_threshold_env_overrides(self):
+        result = run_bash("echo $RECALL_SIMILARITY_THRESHOLD",
+                          env_overrides={"RECALL_SIMILARITY_THRESHOLD": "0.6"})
+        assert result.stdout.strip() == "0.6"
+
+    def test_project_scope_default_on(self):
+        result = run_bash("echo $RECALL_PROJECT_SCOPE")
+        assert result.stdout.strip() == "1"
+
+    def test_project_scope_env_overrides(self):
+        result = run_bash("echo $RECALL_PROJECT_SCOPE",
+                          env_overrides={"RECALL_PROJECT_SCOPE": "0"})
+        assert result.stdout.strip() == "0"
+
+
 class TestShouldSearch:
     """Tests for the should_search gate function in lib.sh."""
 
