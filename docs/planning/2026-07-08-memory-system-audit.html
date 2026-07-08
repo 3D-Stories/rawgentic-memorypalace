@@ -1,0 +1,174 @@
+<meta charset="utf-8">
+<title>Memory System Audit — Learning or Hoarding?</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fdfdfc; --ink:#1f2833; --ink2:#4b5665; --ink3:#7b8494;
+  --line:#dde1e7; --accent:#9a6a00;
+  --data:#2a78d6; --good:#1baf7a; --warn:#eda100; --bad:#e34948; --dead:#c6ccd4;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#161c24; --panel:#1d2531; --ink:#e8ecf1; --ink2:#aab4c2; --ink3:#7e8998;
+  --line:#313c4b; --accent:#e0a83c;
+  --data:#3987e5; --good:#199e70; --warn:#c98500; --bad:#e66767; --dead:#46505e;
+}}
+:root[data-theme="dark"]{
+  --bg:#161c24; --panel:#1d2531; --ink:#e8ecf1; --ink2:#aab4c2; --ink3:#7e8998;
+  --line:#313c4b; --accent:#e0a83c;
+  --data:#3987e5; --good:#199e70; --warn:#c98500; --bad:#e66767; --dead:#46505e;
+}
+:root[data-theme="light"]{
+  --bg:#f6f7f9; --panel:#fdfdfc; --ink:#1f2833; --ink2:#4b5665; --ink3:#7b8494;
+  --line:#dde1e7; --accent:#9a6a00;
+  --data:#2a78d6; --good:#1baf7a; --warn:#eda100; --bad:#e34948; --dead:#c6ccd4;
+}
+body{background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; margin:0;}
+.wrap{max-width:980px; margin:0 auto; padding:40px 24px 72px; display:flex; flex-direction:column; gap:36px;}
+h1,h2,h3{font-family:"Iowan Old Style",Palatino,"Palatino Linotype",Georgia,serif; text-wrap:balance; margin:0;}
+h1{font-size:2.1rem; line-height:1.15;}
+h2{font-size:1.35rem; border-bottom:1px solid var(--line); padding-bottom:8px; margin-bottom:4px;}
+p{margin:0; max-width:70ch;}
+.eyebrow{font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:600;}
+.muted{color:var(--ink2);}
+.small{font-size:.85rem; color:var(--ink3);}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-variant-numeric:tabular-nums;}
+.verdict{background:var(--panel); border:1px solid var(--line); border-left:5px solid var(--bad); border-radius:6px; padding:20px 24px; display:flex; flex-direction:column; gap:8px;}
+.verdict strong{color:var(--bad); letter-spacing:.05em;}
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px;}
+.tile{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:14px 16px; display:flex; flex-direction:column; gap:2px;}
+.tile .n{font-size:1.55rem; font-weight:650; font-family:ui-monospace,Menlo,Consolas,monospace; font-variant-numeric:tabular-nums;}
+.tile .n.bad{color:var(--bad);} .tile .n.warn{color:var(--warn);} .tile .n.good{color:var(--good);}
+.tile .l{font-size:.78rem; color:var(--ink2); line-height:1.3;}
+figure{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:20px 22px; margin:0; display:flex; flex-direction:column; gap:14px;}
+figcaption{font-weight:600; font-size:.95rem;}
+figcaption .sub{display:block; font-weight:400; font-size:.8rem; color:var(--ink3); margin-top:2px;}
+.brow{display:grid; grid-template-columns:170px 1fr 74px; align-items:center; gap:10px; font-size:.85rem;}
+.brow .lab{color:var(--ink2); text-align:right;}
+.brow .val{color:var(--ink); text-align:right; font-family:ui-monospace,Menlo,Consolas,monospace; font-variant-numeric:tabular-nums; font-size:.82rem;}
+.track{background:none; height:16px; position:relative;}
+.fill{height:16px; border-radius:0 4px 4px 0; background:var(--data); min-width:2px;}
+.fill.bad{background:var(--bad);} .fill.dead{background:var(--dead);}
+.brow:hover .fill{filter:brightness(1.12);}
+.legend{display:flex; gap:18px; flex-wrap:wrap; font-size:.78rem; color:var(--ink2);}
+.legend span{display:inline-flex; align-items:center; gap:6px;}
+.sw{width:11px; height:11px; border-radius:3px; display:inline-block;}
+.findings{display:flex; flex-direction:column; gap:10px;}
+.finding{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:14px 16px; display:grid; grid-template-columns:86px 1fr; gap:14px; align-items:start;}
+.chip{font-size:.68rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; padding:3px 8px; border-radius:10px; text-align:center; white-space:nowrap;}
+.chip.crit{background:var(--bad); color:#fff;}
+.chip.high{background:var(--warn); color:#241a00;}
+.chip.med{background:var(--dead); color:var(--ink);}
+.finding h3{font-size:.98rem; margin-bottom:4px; font-family:system-ui,sans-serif; font-weight:650;}
+.finding p{font-size:.88rem; color:var(--ink2);}
+.ladder{display:flex; gap:8px; flex-wrap:wrap;}
+.rung{flex:1 1 150px; background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--data); border-radius:6px; padding:12px 14px; display:flex; flex-direction:column; gap:4px;}
+.rung .stage{font-size:.7rem; letter-spacing:.1em; color:var(--accent); font-weight:700;}
+.rung .home{font-weight:650; font-size:.88rem;}
+.rung .crit2{font-size:.78rem; color:var(--ink2);}
+table{border-collapse:collapse; width:100%; font-size:.88rem;}
+.tblwrap{overflow-x:auto; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:6px 14px;}
+th{text-align:left; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink3); padding:10px 12px 6px 0; border-bottom:1px solid var(--line);}
+td{padding:9px 12px 9px 0; border-bottom:1px solid var(--line); vertical-align:top; color:var(--ink2);}
+tr:last-child td{border-bottom:none;}
+td:first-child{white-space:nowrap; font-weight:650; color:var(--ink);}
+code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.85em; background:color-mix(in srgb,var(--line) 45%,transparent); padding:1px 5px; border-radius:4px;}
+footer{font-size:.8rem; color:var(--ink3); border-top:1px solid var(--line); padding-top:14px;}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">rawgentic workspace · memory audit · 2026-07-08</div>
+  <h1>Is the workspace learning, or just hoarding?</h1>
+  <p class="muted" style="margin-top:8px">Every memory layer audited: mempalace, auto-memory, <span class="mono">.remember/</span>, session notes, CLAUDE.md tiers, and the hooks between them — with all 114 workspace transcripts mined for what actually resurfaces.</p>
+</header>
+
+<section class="verdict">
+  <div class="eyebrow" style="color:var(--bad)">Verdict</div>
+  <p><strong>ACCUMULATING.</strong> The workspace gets smarter only through its always-loaded file layers (CLAUDE.md, MEMORY.md, <span class="mono">.remember</span> injection). The 20,155-drawer semantic layer is noise-dominated, re-serves stale facts as truth, and cannot say which memories are ever used — nothing tracks retrieval.</p>
+</section>
+
+<section class="tiles">
+  <div class="tile"><span class="n">20,155</span><span class="l">mempalace drawers, 31 wings</span></div>
+  <div class="tile"><span class="n bad">87%</span><span class="l">of recall injections come from bulk-ingested docs</span></div>
+  <div class="tile"><span class="n bad">18%</span><span class="l">of auto-memory body files ever read (40 / 217)</span></div>
+  <div class="tile"><span class="n warn">14</span><span class="l">KG triples vs 20,155 drawers — graph unused</span></div>
+  <div class="tile"><span class="n warn">18.1k</span><span class="l">tokens of guaranteed memory load per session start</span></div>
+  <div class="tile"><span class="n">1</span><span class="l">fact ever invalidated (<span class="mono">kg_invalidate</span>) palace-wide</span></div>
+</section>
+
+<figure>
+  <figcaption>Where the 15,398 recall injections came from
+    <span class="sub">[memory] items across 114 transcripts, by room · red = bulk-ingested documentation, the noise source</span>
+  </figcaption>
+  <div class="brow" title="documentation: 13,427 items (87%)"><span class="lab">documentation</span><span class="track"><span class="fill bad" style="width:100%"></span></span><span class="val">13,427</span></div>
+  <div class="brow" title="diary: 585 items"><span class="lab">diary</span><span class="track"><span class="fill" style="width:4.4%"></span></span><span class="val">585</span></div>
+  <div class="brow" title="decisions: 372 items"><span class="lab">decisions</span><span class="track"><span class="fill" style="width:2.8%"></span></span><span class="val">372</span></div>
+  <div class="brow" title="problem: 174 items"><span class="lab">problem</span><span class="track"><span class="fill" style="width:1.3%"></span></span><span class="val">174</span></div>
+  <div class="brow" title="milestone: 142 items"><span class="lab">milestone</span><span class="track"><span class="fill" style="width:1.1%"></span></span><span class="val">142</span></div>
+  <div class="brow" title="all other rooms: 698 items"><span class="lab">all other rooms</span><span class="track"><span class="fill" style="width:5.2%"></span></span><span class="val">698</span></div>
+  <div class="legend"><span><span class="sw" style="background:var(--bad)"></span>bulk-ingested repo docs</span><span><span class="sw" style="background:var(--data)"></span>curated rooms</span></div>
+  <p class="small">Dead projects pollute the channel: <span class="mono">millions</span> (2,804) + <span class="mono">clawd</span> (1,363) supply 27% of everything injected. Median similarity 0.49 against a 0.30 threshold.</p>
+</figure>
+
+<figure>
+  <figcaption>Resurfacing rate by layer
+    <span class="sub">share of stored content that ever reaches a future session's context</span>
+  </figcaption>
+  <div class="brow" title="CLAUDE.md tiers: loaded verbatim every session"><span class="lab">CLAUDE.md tiers</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">100%</span></div>
+  <div class="brow" title=".remember: SessionStart injects all tiers incl. archive"><span class="lab">.remember tiers</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">100%*</span></div>
+  <div class="brow" title="MEMORY.md index: auto-loads every session"><span class="lab">MEMORY.md index</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">100%</span></div>
+  <div class="brow" title="session_notes: 14 of 56 files ever Read"><span class="lab">session_notes files</span><span class="track"><span class="fill dead" style="width:25%"></span></span><span class="val">25%</span></div>
+  <div class="brow" title="auto-memory body: 40 of 217 files ever Read"><span class="lab">auto-memory bodies</span><span class="track"><span class="fill dead" style="width:18.4%"></span></span><span class="val">18%</span></div>
+  <div class="brow" title="mempalace drawers: unmeasurable — no retrieval telemetry exists"><span class="lab">mempalace drawers</span><span class="track"><span class="fill dead" style="width:2%"></span></span><span class="val">?</span></div>
+  <div class="legend"><span><span class="sw" style="background:var(--data)"></span>force-loaded</span><span><span class="sw" style="background:var(--dead)"></span>read-on-demand (mostly never)</span></div>
+  <p class="small">* both injection payloads overflowed the harness inline limit (~10&nbsp;KB) on 2026-07-08 and were persisted to files — only a 2&nbsp;KB preview reached context. “?” is itself finding F2: no hit tracking exists anywhere.</p>
+</figure>
+
+<section>
+  <h2>Findings</h2>
+  <div class="findings" style="margin-top:12px">
+    <div class="finding"><span class="chip crit">Critical</span><div><h3>F1 · Recall channel is noise-dominated</h3><p>87% of injections from wholesale-ingested docs; dead projects supply 27%; median sim 0.49 vs threshold 0.30 (max 5 results, <span class="mono">hooks/lib.sh:37</span>).</p></div></div>
+    <div class="finding"><span class="chip crit">Critical</span><div><h3>F2 · Nothing tracks whether a memory is ever used</h3><p>No hit counting in the mempalace package, the HTTP server, or its log (46,635 lines, zero request records). Usage-informed decay and promotion are impossible until this primitive exists.</p></div></div>
+    <div class="finding"><span class="chip crit">Critical</span><div><h3>F3 · Stale facts re-served as truth</h3><p>Top result for the chorestory-RLS query (0.967 after a +0.4 closet_boost) is a Nov-2025 aspirational doc claiming DB-level RLS — ranked above verified reality. Backfilled drawer still says “INERT in BOTH dev and prod”; dev flipped live 07-03. One expired fact palace-wide.</p></div></div>
+    <div class="finding"><span class="chip high">High</span><div><h3>F4 · Auto-memory is 82% write-only</h3><p>217 body files; 40 ever read across 114 sessions. Index at its ~5k-token budget; 2 orphans; laptop merge introduced a flagged contradiction.</p></div></div>
+    <div class="finding"><span class="chip high">High</span><div><h3>F5 · Delivery silently truncates &gt;10 KB</h3><p>Both memory systems’ injections overflowed the harness inline limit in one day and arrived as file pointers with 2 KB previews. Nothing alerts.</p></div></div>
+    <div class="finding"><span class="chip high">High</span><div><h3>F9 · Recall scoping wrong under concurrency</h3><p><span class="mono">resolve_project()</span> picks the globally most-recent project, not this session’s binding; the <span class="mono">basename(cwd)</span> fallback mints bogus wings (<span class="mono">prompts</span>, <span class="mono">tmp</span>, <span class="mono">docs</span> observed).</p></div></div>
+    <div class="finding"><span class="chip high">High</span><div><h3>F10 · Duplication is systemic; dedup can’t see it</h3><p>The memory-policy fact lives in ≥6 places. Backfill dedup at 0.9 over full file text flagged zero duplicates in 197 files that contained ≥4 copies of one fact.</p></div></div>
+    <div class="finding"><span class="chip med">Medium</span><div><h3>F6–F8 · The healthy parts, and their ceiling</h3><p><span class="mono">.remember</span> has the only complete capture→decay→resurface pipeline, but insights die in archive.md instead of promoting. session_notes work only where an always-loaded pointer names the file (42/56 write-only). Guaranteed session-start load is 18.1k tokens — the promotion budget is already spent.</p></div></div>
+  </div>
+</section>
+
+<section>
+  <h2>The promotion ladder (design)</h2>
+  <p class="muted" style="margin:10px 0 12px">One home per fact; a fact climbs one rung at a time, and each rung has an entry criterion. Demotion is the same ladder downward.</p>
+  <div class="ladder">
+    <div class="rung"><span class="stage">L0 · capture</span><span class="home">.remember/today-*.md</span><span class="crit2">anything notable · existing staging</span></div>
+    <div class="rung"><span class="stage">L1 · consolidate</span><span class="home">recent.md → archive.md</span><span class="crit2">survives Haiku merge · existing</span></div>
+    <div class="rung"><span class="stage">L2 · durable</span><span class="home">mempalace drawer / KG</span><span class="crit2">recurred ≥2 sessions, or burned &gt;30 min, or cross-project</span></div>
+    <div class="rung"><span class="stage">L3 · indexed</span><span class="home">MEMORY.md line</span><span class="crit2">proven reuse · budget-gated (~120 lines)</span></div>
+    <div class="rung"><span class="stage">L4 · contract</span><span class="home">CLAUDE.md rule</span><span class="crit2">it is process · owner PR only</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Decay &amp; retention rules (design)</h2>
+  <div class="tblwrap" style="margin-top:12px">
+  <table>
+    <tr><th>Rule</th><th>What changes</th><th>Fixes</th></tr>
+    <tr><td>R1 quarantine docs</td><td>Exclude the <code>documentation</code> room (93% of palace) from auto-recall; explicit search only — the repo is its own source of truth</td><td>F1</td></tr>
+    <tr><td>R2 dormant wings</td><td><code>millions</code>, <code>clawd</code>, … excluded from cross-project recall unless named or bound</td><td>F1</td></tr>
+    <tr><td>R3 threshold 0.30→0.45</td><td>Median injected sim is 0.49 — cut the worse half; env override stays</td><td>F1</td></tr>
+    <tr><td>R4 time-damped episodic</td><td><code>diary</code> rank-decays after 90d; <code>decisions</code>/<code>reference</code> die only by supersession</td><td>—</td></tr>
+    <tr><td>R5 correction protocol</td><td>A fact change updates ALL copies: canonical drawer, <code>kg_invalidate</code> chain, auto-memory body+index, grep sweep; nightly report-only drift check</td><td>F3 F10</td></tr>
+    <tr><td>R6 scope closet_boost</td><td>Boosts only for curated rooms — a +0.4 boost put a 2025 aspiration above verified reality</td><td>F3</td></tr>
+    <tr><td>R7 MEMORY.md budget</td><td>Hard cap ~120 lines; add one → remove one; never-read entries demote to mempalace-only</td><td>F4 F8</td></tr>
+    <tr><td>Telemetry (new)</td><td>One <code>retrievals</code> SQLite table written by <code>/search</code> + MCP search — unlocks usage-informed decay, the L3 criterion, and honest future audits</td><td>F2</td></tr>
+    <tr><td>Injection budget</td><td>Session-start memory ≤ 20k tok; recall payload capped at 8 KB with a “+N more” trailer — never trip the ~10 KB persist-to-file limit</td><td>F5 F8</td></tr>
+    <tr><td>Session-scoped recall</td><td><code>resolve_project()</code> resolves this session’s registry binding; <code>basename(cwd)</code> fallback removed</td><td>F9</td></tr>
+  </table>
+  </div>
+</section>
+
+<footer>
+  Full report: <span class="mono">docs/reviews/2026-07-08-memory-system-audit.md</span> · design: <span class="mono">docs/planning/2026-07-08-memory-retention-decay-promotion-design.md</span> · evidence: live MCP interrogation, hook source reads, and 114 transcripts in <span class="mono">~/.claude/projects/-home-rocky00717-rawgentic/</span> · read-only audit — no memory was written, deleted, or reconfigured.
+</footer>
+</div>
