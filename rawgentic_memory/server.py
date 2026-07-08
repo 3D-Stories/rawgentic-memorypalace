@@ -90,11 +90,28 @@ def build_app(
         prompt = body.get("prompt", "")
         if not prompt:
             return JSONResponse({"additionalContext": ""})
-        min_similarity = float(body.get("min_similarity", 0.3))
-        limit = int(body.get("limit", 10))
-        results = adapter.search(query=prompt, limit=limit)
+        # rawgentic#305: the recall hook passes its knobs as headers (it POSTs the
+        # raw hook input, so it cannot put them in the body). Header wins over
+        # body; malformed values fall back rather than 500.
+        def _hdr(name, cast, fallback):
+            try: return cast(request.headers[name])
+            except (KeyError, ValueError): return fallback
+        min_similarity = _hdr("x-similarity-threshold", float, float(body.get("min_similarity", 0.3)))
+        limit = _hdr("x-max-results", int, int(body.get("limit", 10)))
+        project_scope = request.headers.get("x-project", "").strip()
+        # Over-fetch so threshold/project filters can't starve recall when
+        # foreign hits occupy the top ranks; the slice below re-caps to limit.
+        results = adapter.search(query=prompt, limit=max(limit, 1) * 4)
         # Filter by similarity threshold
         results = [r for r in results if r.similarity >= min_similarity]
+        if project_scope:
+            # Stored memories use underscore project names; the hook resolves
+            # hyphenated workspace names — compare normalized. Project-less
+            # (global/diary) memories stay visible under scoping.
+            scope = project_scope.replace("-", "_").lower()
+            results = [r for r in results if not r.project
+                       or r.project.replace("-", "_").lower() == scope]
+        results = results[:limit] if limit >= 0 else results
         if not results:
             return JSONResponse({"additionalContext": ""})
         # Format as structured context for hook injection

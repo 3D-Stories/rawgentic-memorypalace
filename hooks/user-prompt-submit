@@ -34,12 +34,18 @@ fi
 
 # POST full hook input to /search with thresholds
 # The server's _parse_body() extracts .prompt from the JSON body
+# rawgentic#305: scope recall to the resolved project unless disabled or unresolved
+PROJECT_HEADER_ARGS=()
+if [[ "$RECALL_PROJECT_SCOPE" == "1" && -n "$PROJECT" && "$PROJECT" != "unknown" ]]; then
+    PROJECT_HEADER_ARGS=(-H "X-Project: ${PROJECT}")
+fi
 SEARCH_RESPONSE=$(echo "$HOOK_INPUT" | \
     curl --silent --fail --connect-timeout 2 --max-time 8 \
         -X POST \
         -H "Content-Type: application/json" \
         -H "X-Similarity-Threshold: ${RECALL_SIMILARITY_THRESHOLD}" \
         -H "X-Max-Results: ${RECALL_MAX_RESULTS}" \
+        "${PROJECT_HEADER_ARGS[@]}" \
         --data-binary @- \
         "${MEMORY_SERVER_URL}/search" 2>/dev/null) || true
 

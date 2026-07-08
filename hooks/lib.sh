@@ -34,7 +34,13 @@ RECALL_MIN_PROMPT_CHARS="${RECALL_MIN_PROMPT_CHARS:-20}"
 RECALL_DEBOUNCE_SECS="${RECALL_DEBOUNCE_SECS:-30}"
 
 # Cosine similarity threshold for /search results
-RECALL_SIMILARITY_THRESHOLD="${RECALL_SIMILARITY_THRESHOLD:-0.30}"
+# rawgentic#305: raised 0.30 → 0.45 — live evidence showed cross-project noise
+# injecting at sim 0.31–0.37 while useful hits sit ≥ ~0.5.
+RECALL_SIMILARITY_THRESHOLD="${RECALL_SIMILARITY_THRESHOLD:-0.45}"
+
+# Scope per-prompt recall to the resolved project (1 = on, 0 = off).
+# Explicit searches (MCP tools, direct /search calls) are never scoped.
+RECALL_PROJECT_SCOPE="${RECALL_PROJECT_SCOPE:-1}"
 
 # Maximum results returned from /search
 RECALL_MAX_RESULTS="${RECALL_MAX_RESULTS:-5}"

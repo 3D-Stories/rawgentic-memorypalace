@@ -97,8 +97,9 @@ Default `http://127.0.0.1:8420`. Override via project `CLAUDE.md` section `Memor
 |-----|---------|---------|
 | `RECALL_MIN_PROMPT_CHARS` | 20 | Skip `/search` on prompts shorter than this |
 | `RECALL_DEBOUNCE_SECS` | 30 | Minimum seconds between `/search` calls per project |
-| `RECALL_SIMILARITY_THRESHOLD` | 0.30 | Min similarity score for results to inject |
+| `RECALL_SIMILARITY_THRESHOLD` | 0.45 | Min similarity score for results to inject |
 | `RECALL_MAX_RESULTS` | 5 | Max results per `/search` (bounds context budget) |
+| `RECALL_PROJECT_SCOPE` | 1 | Scope per-prompt recall to the bound project (0 = off); explicit searches are never scoped. Known limitation: project resolution uses the workspace-wide most-recent project, so concurrent sessions can scope to the wrong project ([#54](https://github.com/3D-Stories/rawgentic-memorypalace/issues/54)) |
 | `FACT_CHECK_DEBOUNCE_SECS` | 60 | Minimum seconds between `/fact_check` calls |
 | `MEMPALACE_CLAUDE_WORKSPACE` | auto-detected from `.cwd` | Override workspace root for session registry lookups and PreCompact fork |
 | `MEMPALACE_STOP_BLOCK_INTERVAL_SECS` | 900 (15 min) | Minimum seconds between Stop hook save injections |
@@ -291,6 +292,14 @@ That's working as intended — the wrapper's Stop hook injects a `systemMessage`
 The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason`) — NOT `hookSpecificOutput`. If you see this error, your wrapper is outdated. Update it by copying from the plugin: `cp <plugin-path>/hooks/mempalace-hook-wrapper.sh ~/.local/bin/`.
 
 ## Changelog
+
+### v0.4.4 (2026-07-08)
+
+- **Recall tuning (rawgentic#305).** Fixed a silent transport bug: the recall hook sent `X-Similarity-Threshold`/`X-Max-Results` as HTTP headers but `/search` only read the JSON body, so `RECALL_SIMILARITY_THRESHOLD` never applied and recall always filtered at 0.3. `/search` now honors those headers (body/defaults preserved for explicit callers). Default threshold raised 0.30 → 0.45. New `RECALL_PROJECT_SCOPE` knob (default on) scopes per-prompt recall to the bound project via a new `X-Project` header — normalized `-`/`_` matching, project-less (global/diary) memories stay visible; explicit searches (MCP tools, direct `/search`) unaffected. `marketplace.json` version re-synced with `plugin.json` (drift left by v0.4.3).
+
+### v0.4.3 (2026-07-08)
+
+- **Auto-save instruction states mempalace authority (rawgentic#304).** SessionStart/Stop hook wording now names mempalace as the authoritative long-term memory. (Changelog entry backfilled in v0.4.4 — the v0.4.3 PR omitted it and the `marketplace.json` bump.)
 
 ### v0.4.2 (2026-05-13)
 
