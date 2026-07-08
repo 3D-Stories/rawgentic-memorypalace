@@ -453,3 +453,84 @@ class TestWrapperPreCompactSchema:
         result = self._run_wrapper({"session_id": "x", "stop_hook_active": "true"})
         assert result.returncode == 0
         assert result.stdout.strip() == "{}"
+
+
+class TestWrapperPreCompactDegradedPath:
+    """rawgentic#306 — mempalace save failure falls back to a local transcript
+    save and approves; block ONLY when both fail. Also pins the fix for the
+    pre-existing dead block path (SAVE_EXIT was always 0 via `|| true`)."""
+
+    WRAPPER = HOOKS_DIR / "mempalace-hook-wrapper.sh"
+    SID = "deadbeef-0000-4000-8000-306306306306"
+
+    @pytest.fixture(autouse=True)
+    def _skip_if_missing(self):
+        if not self.WRAPPER.exists():
+            pytest.skip("wrapper not yet created")
+
+    def _stub(self, tmp_path, exit_code, output):
+        stub = tmp_path / "claude-stub"
+        stub.write_text(f"#!/bin/bash\nprintf '%s\\n' {json.dumps(output)}\nexit {exit_code}\n")
+        stub.chmod(0o755)
+        return str(stub)
+
+    def _home_with_transcript(self, tmp_path, plant=True):
+        home = tmp_path / "home"
+        proj = home / ".claude" / "projects" / "-tmp-fake-ws"
+        proj.mkdir(parents=True)
+        if plant:
+            (proj / f"{self.SID}.jsonl").write_text('{"type":"turn"}\n' * 5)
+        return str(home)
+
+    def _run(self, tmp_path, *, exit_code, output, plant_transcript=True):
+        home = self._home_with_transcript(tmp_path, plant=plant_transcript)
+        fb = tmp_path / "fallback"
+        result = _run_hook("mempalace-hook-wrapper.sh",
+                           {"session_id": self.SID, "cwd": "/tmp/fake-ws"},
+                           19999,
+                           env_extras={
+                               "HOME": home,
+                               "CLAUDE_BIN": self._stub(tmp_path, exit_code, output),
+                               "MEMPALACE_PRECOMPACT_FALLBACK_DIR": str(fb),
+                               "MEMPALACE_PRECOMPACT_TIMEOUT_SECS": "10",
+                           },
+                           args=["precompact"])
+        return result, fb
+
+    def test_outage_falls_back_and_approves_degraded(self, tmp_path):
+        """AC1+AC3: fork fails -> transcript copied locally -> approve, loud."""
+        result, fb = self._run(tmp_path, exit_code=1, output="mempalace unreachable")
+        assert result.returncode == 0
+        data = json.loads(result.stdout.strip())
+        assert data["decision"] == "approve"
+        assert "degraded" in data["reason"].lower()
+        copies = list(fb.glob(f"{self.SID}-*.jsonl"))
+        assert len(copies) == 1 and copies[0].stat().st_size > 0
+        assert result.stderr.strip() != ""  # loud, never silent
+
+    def test_both_fail_blocks(self, tmp_path):
+        """AC2: fork fails AND no transcript to fall back to -> block."""
+        result, fb = self._run(tmp_path, exit_code=1, output="down",
+                               plant_transcript=False)
+        data = json.loads(result.stdout.strip())
+        assert data["decision"] == "block"
+        assert not list(fb.glob("*.jsonl"))
+
+    def test_zero_exit_without_confirmation_is_failure(self, tmp_path):
+        """The dead-block bug's sibling: claude -p exits 0 while reporting
+        failure in prose. No 'Saved ...' confirmation => degraded path."""
+        result, fb = self._run(tmp_path, exit_code=0,
+                               output="I could not reach mempalace, sorry.")
+        data = json.loads(result.stdout.strip())
+        assert data["decision"] == "approve"
+        assert "degraded" in data["reason"].lower()
+        assert len(list(fb.glob(f"{self.SID}-*.jsonl"))) == 1
+
+    def test_healthy_save_approves_plain(self, tmp_path):
+        """Regression pin: confirmed save keeps today's plain approve."""
+        result, fb = self._run(tmp_path, exit_code=0,
+                               output="Saved 3 drawers + diary")
+        data = json.loads(result.stdout.strip())
+        assert data["decision"] == "approve"
+        assert "degraded" not in data["reason"].lower()
+        assert not list(fb.glob("*.jsonl"))  # no fallback on success

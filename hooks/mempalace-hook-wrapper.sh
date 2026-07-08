@@ -117,20 +117,60 @@ if [[ -z "$CLAUDE_WORKSPACE" ]]; then
 fi
 
 log "forking session $SESSION_ID (workspace=$CLAUDE_WORKSPACE, timeout=${PRECOMPACT_TIMEOUT_SECS}s)"
+# rawgentic#306: NO `|| true` here — it made $? always 0, so the old block
+# path was dead code and every fork failure silently approved with no save.
 SAVE_OUTPUT=$(cd "$CLAUDE_WORKSPACE" && MEMPALACE_SAVE_IN_PROGRESS=1 timeout "$PRECOMPACT_TIMEOUT_SECS" "$CLAUDE_BIN" \
     --resume "$SESSION_ID" --fork-session --disable-slash-commands -p \
     'Save the current session to mempalace NOW: (1) call mempalace_diary_write with an AAAK-compressed semantic summary, (2) call mempalace_add_drawer for key verbatim content — decisions, code, quotes. Be thorough but fast. Respond with a one-line confirmation like "Saved N drawers + diary" and nothing else.' \
-    2>&1) || true
+    2>&1)
 SAVE_EXIT=$?
 log "fork exit=$SAVE_EXIT"
 printf '%s\n---\n' "$SAVE_OUTPUT" | tail -20 >> "$LOG"
 
-if [[ $SAVE_EXIT -ne 0 ]]; then
-    R=$(json_escape "PreCompact: fork-save failed (exit $SAVE_EXIT, timeout was ${PRECOMPACT_TIMEOUT_SECS}s). Aborting compact. See $LOG.")
-    printf '{"decision":"block","reason":%s}' "$R"
+# Success requires BOTH a clean exit AND the confirmation the prompt demands —
+# a mempalace outage leaves claude -p exiting 0 while reporting failure in prose.
+SAVE_OK=0
+if [[ $SAVE_EXIT -eq 0 ]] && printf '%s' "$SAVE_OUTPUT" | grep -qiE 'saved.*(drawer|diary)'; then
+    SAVE_OK=1
+fi
+
+if [[ $SAVE_OK -eq 1 ]]; then
+    R=$(json_escape "PreCompact: session saved to mempalace (forked). Compaction allowed.")
+    printf '{"decision":"approve","reason":%s}' "$R"
     exit 0
 fi
 
-# Success
-R=$(json_escape "PreCompact: session saved to mempalace (forked). Compaction allowed.")
-printf '{"decision":"approve","reason":%s}' "$R"
+# --- Degraded path (rawgentic#306): mempalace save failed → local transcript
+# fallback, approve loudly; block ONLY when both fail. ---
+FALLBACK_DIR="${MEMPALACE_PRECOMPACT_FALLBACK_DIR:-$STATE_DIR/precompact-fallback}"
+log "save FAILED (exit=$SAVE_EXIT, confirmation absent) — attempting local transcript fallback to $FALLBACK_DIR"
+
+TRANSCRIPT=""
+for f in "$HOME"/.claude/projects/*/"$SESSION_ID".jsonl; do
+    [[ -f "$f" ]] && TRANSCRIPT="$f" && break
+done
+
+FALLBACK_OK=0
+FALLBACK_DEST=""
+if [[ -n "$TRANSCRIPT" ]]; then
+    mkdir -p "$FALLBACK_DIR" 2>/dev/null || true
+    FALLBACK_DEST="$FALLBACK_DIR/${SESSION_ID}-$(date +%s).jsonl"
+    if cp "$TRANSCRIPT" "$FALLBACK_DEST" 2>/dev/null && [[ -s "$FALLBACK_DEST" ]]; then
+        FALLBACK_OK=1
+    fi
+fi
+
+if [[ $FALLBACK_OK -eq 1 ]]; then
+    MSG="PreCompact DEGRADED: mempalace save failed (fork exit $SAVE_EXIT) — full session transcript preserved locally at $FALLBACK_DEST. Compaction allowed; re-ingest the transcript when mempalace is back. See $LOG."
+    echo "⚠️  $MSG" >&2
+    log "$MSG"
+    R=$(json_escape "$MSG")
+    printf '{"decision":"approve","reason":%s}' "$R"
+    exit 0
+fi
+
+MSG="PreCompact: BOTH saves failed — mempalace fork-save (exit $SAVE_EXIT) AND local transcript fallback (transcript ${TRANSCRIPT:-not found}, dest ${FALLBACK_DEST:-n/a}). Blocking compact: information loss is unacceptable. See $LOG."
+echo "⚠️  $MSG" >&2
+log "$MSG"
+R=$(json_escape "$MSG")
+printf '{"decision":"block","reason":%s}' "$R"
