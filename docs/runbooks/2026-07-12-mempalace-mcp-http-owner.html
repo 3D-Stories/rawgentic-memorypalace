@@ -1,0 +1,238 @@
+<title>MemPalace MCP single HTTP owner (F3)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --bg: #f6f8f8; --surface: #ffffff; --surface-2: #eef2f1;
+    --text: #16201f; --muted: #566461; --border: #dde5e3;
+    --accent: #0f766e; --accent-soft: #d6ede9;
+    --warn: #b45309; --warn-soft: #fbeddb;
+    --crit: #b3261e; --crit-soft: #f7dedb;
+    --good: #15803d; --good-soft: #d9efdf;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --maxw: 74ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1413; --surface: #131c1b; --surface-2: #182322;
+      --text: #e6efed; --muted: #90a29e; --border: #26332f;
+      --accent: #2dd4bf; --accent-soft: #123230;
+      --warn: #f4b062; --warn-soft: #38260f;
+      --crit: #f19b93; --crit-soft: #3a1a17;
+      --good: #6fe08f; --good-soft: #12301c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1413; --surface: #131c1b; --surface-2: #182322;
+    --text: #e6efed; --muted: #90a29e; --border: #26332f;
+    --accent: #2dd4bf; --accent-soft: #123230;
+    --warn: #f4b062; --warn-soft: #38260f;
+    --crit: #f19b93; --crit-soft: #3a1a17;
+    --good: #6fe08f; --good-soft: #12301c;
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f8f8; --surface: #ffffff; --surface-2: #eef2f1;
+    --text: #16201f; --muted: #566461; --border: #dde5e3;
+    --accent: #0f766e; --accent-soft: #d6ede9;
+    --warn: #b45309; --warn-soft: #fbeddb;
+    --crit: #b3261e; --crit-soft: #f7dedb;
+    --good: #15803d; --good-soft: #d9efdf;
+  }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); line-height: 1.6;
+    -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 78ch; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+  .prose { max-width: var(--maxw); }
+  header.doc { border-bottom: 1px solid var(--border); padding-bottom: 1.75rem; margin-bottom: 2.5rem; }
+  .eyebrow { font-family: var(--mono); font-size: .72rem; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 .75rem; font-weight: 600; }
+  h1 { font-size: clamp(1.7rem, 3.4vw, 2.4rem); line-height: 1.12; letter-spacing: -.02em;
+    font-weight: 720; margin: 0 0 .6rem; text-wrap: balance; max-width: 20ch; }
+  .meta { display: flex; flex-wrap: wrap; gap: .5rem .9rem; font-family: var(--mono);
+    font-size: .78rem; color: var(--muted); margin-top: 1rem; }
+  .meta .k { color: var(--text); }
+  h2 { font-size: 1.28rem; letter-spacing: -.01em; margin: 3rem 0 .4rem; font-weight: 680;
+    text-wrap: balance; }
+  h2 .num { font-family: var(--mono); font-size: .8rem; color: var(--accent); margin-right: .6rem; font-weight: 600; }
+  h3 { font-size: 1rem; margin: 1.8rem 0 .3rem; font-weight: 660; }
+  p, li { max-width: var(--maxw); }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  code { font-family: var(--mono); font-size: .86em; background: var(--surface-2);
+    padding: .1em .38em; border-radius: 4px; border: 1px solid var(--border); }
+  pre { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem 1.1rem; overflow-x: auto; margin: 1rem 0; }
+  pre code { background: none; border: none; padding: 0; font-size: .82rem; line-height: 1.55; }
+  .callout { border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px;
+    padding: 1rem 1.15rem; margin: 1.4rem 0; background: var(--surface); }
+  .callout .lbl { font-family: var(--mono); font-size: .7rem; letter-spacing: .12em;
+    text-transform: uppercase; font-weight: 700; display: block; margin-bottom: .4rem; }
+  .callout p { margin: .3rem 0; }
+  .callout p:first-of-type { margin-top: 0; }
+  .c-decision { border-left-color: var(--accent); background: var(--accent-soft); }
+  .c-decision .lbl { color: var(--accent); }
+  .c-warn { border-left-color: var(--warn); background: var(--warn-soft); }
+  .c-warn .lbl { color: var(--warn); }
+  .c-good { border-left-color: var(--good); background: var(--good-soft); }
+  .c-good .lbl { color: var(--good); }
+  ul { padding-left: 1.2rem; }
+  li { margin: .32rem 0; }
+  /* topology diagram */
+  .topo { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.5rem 0;
+    max-width: var(--maxw); }
+  @media (max-width: 620px) { .topo { grid-template-columns: 1fr; } }
+  .topo .box { border: 1px solid var(--border); border-radius: 10px; padding: 1rem;
+    background: var(--surface); font-family: var(--mono); font-size: .76rem; }
+  .topo .box h4 { font-family: var(--sans); font-size: .82rem; margin: 0 0 .7rem;
+    text-transform: uppercase; letter-spacing: .1em; }
+  .topo .before h4 { color: var(--crit); }
+  .topo .after h4 { color: var(--good); }
+  .node { border: 1px solid var(--border); border-radius: 6px; padding: .34rem .5rem;
+    margin: .3rem 0; background: var(--surface-2); }
+  .node.lock { border-color: var(--crit); color: var(--crit); }
+  .node.owner { border-color: var(--accent); color: var(--accent); }
+  .flowline { color: var(--muted); text-align: center; font-size: .8rem; margin: .1rem 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .88rem;
+    font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid var(--border); }
+  th { font-family: var(--mono); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); }
+  td code { font-size: .8rem; }
+  footer.doc { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: .82rem; font-family: var(--mono); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+</style>
+
+<div class="wrap">
+  <header class="doc">
+    <p class="eyebrow">Runbook · Decision · F3</p>
+    <h1>MemPalace MCP single HTTP owner</h1>
+    <p class="prose" style="color:var(--muted); font-size:1.05rem; max-width:58ch;">
+      Fixing writer-lock starvation across concurrent Claude Code sessions by replacing
+      per-session stdio writers with one serialized HTTP owner.</p>
+    <div class="meta">
+      <span><span class="k">Date</span> 2026-07-12</span>
+      <span><span class="k">Status</span> deployed (temp) · systemd pending</span>
+      <span><span class="k">Host</span> 10.0.17.205</span>
+      <span><span class="k">mempalace</span> 3.5.0</span>
+    </div>
+  </header>
+
+  <div class="callout c-decision">
+    <span class="lbl">Decision</span>
+    <p>Run <strong>one</strong> persistent MemPalace MCP server in HTTP mode
+      (<code>mempalace-mcp --transport http --port 8765</code>) and repoint every session's
+      MCP client at <code>http://127.0.0.1:8765/mcp</code>. All writes funnel through one
+      process; <code>_HTTP_REQUEST_LOCK</code> serializes them — one Chroma writer, no
+      per-session lease to squat.</p>
+  </div>
+
+  <h2 class="prose"><span class="num">01</span>Problem</h2>
+  <p class="prose">Each concurrent session spawned its own <strong>stdio</strong> MCP server.
+    Every server grabs a process-lifetime <em>writer pre-lease</em>
+    (<code>_acquire_mcp_writer_lock</code>) on its first tool call — including the mandatory
+    on-wake <code>mempalace_status</code>. The oldest session wins the lease and
+    <strong>squats it while idle</strong>; the read-only verdict is latched with no retry, so
+    every newer session is permanently read-only and its mutating tools fail with
+    <code>-32001 "Peer MCP writer active"</code> until it restarts.</p>
+  <p class="prose">The single-writer guard is <strong>correct</strong> — ChromaDB
+    <code>PersistentClient</code> is not process-safe; two processes writing one path corrupt
+    the HNSW index. The defect is the <em>topology</em>: per-session writers competing for one
+    lease. Full RCA: <code>claude_docs/mempalace-writer-lock-rca-20260712.md</code>.</p>
+
+  <div class="topo">
+    <div class="box before">
+      <h4>Before — starvation</h4>
+      <div class="node">session A (idle)</div>
+      <div class="node">session B (active)</div>
+      <div class="node">session C (active)</div>
+      <div class="flowline">each spawns stdio writer ↓</div>
+      <div class="node lock">mine_palace lock — held by A forever</div>
+      <div class="flowline">B, C → latched read-only → -32001</div>
+    </div>
+    <div class="box after">
+      <h4>After — one owner</h4>
+      <div class="node">session A</div>
+      <div class="node">session B</div>
+      <div class="node">session C</div>
+      <div class="flowline">all POST /mcp ↓</div>
+      <div class="node owner">:8765 HTTP owner — serialized writer</div>
+      <div class="flowline">per-op lock · one Chroma writer</div>
+    </div>
+  </div>
+
+  <h2 class="prose"><span class="num">02</span>Why <code>ALLOW_PEER_WRITER=1</code> is required and safe</h2>
+  <p class="prose">Two facts, both confirmed from mempalace 3.5.0 source:</p>
+  <h3>1 · The built-in HTTP mode alone breaks writes</h3>
+  <p class="prose"><code>_MCPHTTPServer</code> is a <code>ThreadingHTTPServer</code>
+    (<code>mcp_server.py:4632</code>) — one worker thread per request. The pre-lease grabbed
+    on the first request's thread cannot be re-entered on a later write thread:
+    <code>mine_palace_lock</code>'s re-entrancy is keyed on <code>threading.local()</code>
+    (<code>palace.py:1043</code>). The write attempts a fresh
+    <code>flock(LOCK_EX|LOCK_NB)</code> on the same lock file, fails, and reports the palace
+    "held by PID <em>&lt;self&gt;</em>". Reads work; writes self-deadlock.</p>
+  <div class="callout c-warn">
+    <span class="lbl">Upstream</span>
+    <p>Reported as <strong>MemPalace/mempalace#1998</strong>. Fix belongs upstream:
+      serve HTTP single-threaded, or make the pre-lease process-scoped. <code>mempalace</code>
+      is third-party (READ-only for us).</p>
+  </div>
+  <h3>2 · The flag disables only the redundant pre-lease</h3>
+  <p class="prose"><code>ALLOW_PEER_WRITER=1</code> skips the process-lifetime pre-lease — not
+    the per-write <code>mine_palace_lock</code>. That per-op lock (LOCK_NB) still fires on
+    every write and still blocks concurrent Chroma writes cross-process. For a
+    <strong>single owner</strong> the flag is safe and sidesteps the thread-local self-conflict.
+    (The RCA's earlier "re-opens corruption" dismissal assumed the flag disables all write
+    locking — it does not.)</p>
+  <div class="callout c-good">
+    <span class="lbl">Verified</span>
+    <p>Two concurrent writes to the owner both returned <code>success: true</code> with
+      distinct drawer IDs, no <code>-32001</code>, no self-conflict.</p>
+  </div>
+
+  <h2 class="prose"><span class="num">03</span>Residual fragility</h2>
+  <p class="prose">The pre-lease and the per-op mutex are the <em>same</em> file lock, so one
+    process cannot both "hold the lease to block peers" and "acquire per-op as the owner."
+    With the pre-lease disabled, the owner is authoritative <strong>only while no other
+    mempalace writer runs against this palace</strong>. A lingering <strong>stdio</strong>
+    session that does an on-wake <code>status</code> grabs the pre-lease and fail-fasts the
+    owner's writes until it exits.</p>
+  <ul class="prose">
+    <li><strong>Steady state</strong> (all sessions on HTTP, zero stdio): correct and reliable.</li>
+    <li><strong>Durable robustness</strong> needs the upstream fix (#1998). Until then: run no
+      stdio mempalace servers against this palace.</li>
+    <li>A <strong>fork</strong> is the only in-house durable alternative; deferred unless the
+      fragility bites.</li>
+  </ul>
+
+  <h2 class="prose"><span class="num">04</span>Runbook</h2>
+  <h3>Install / start (systemd system unit — needs sudo)</h3>
+  <pre><code>sudo cp deploy/mempalace-mcp-http.service /etc/systemd/system/mempalace-mcp-http.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now mempalace-mcp-http.service</code></pre>
+  <h3>Verify writable</h3>
+  <pre><code>curl -s -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"mempalace_add_drawer","arguments":{"wing":"canary","room":"smoke","content":"live-check"}}}' \
+  http://127.0.0.1:8765/mcp
+# expect: "success": true, a drawer_id</code></pre>
+  <h3>Unstick (writes failing with "held by PID")</h3>
+  <pre><code>lslocks | grep mine_palace     # find the holder PID
+ps -o pid,cmd -p &lt;PID&gt;         # confirm a stdio `python -m mempalace.mcp_server`
+kill -TERM &lt;PID&gt;               # frees the flock; owner reacquires per-op next write</code></pre>
+
+  <h2 class="prose"><span class="num">05</span>Key source references</h2>
+  <table>
+    <thead><tr><th>What</th><th>Location</th></tr></thead>
+    <tbody>
+      <tr><td>Writer pre-lease (sticky, no retry)</td><td><code>mcp_server.py:299</code></td></tr>
+      <tr><td>Pre-lease grabbed on <code>status</code></td><td><code>mcp_server.py:1461</code></td></tr>
+      <tr><td>Threaded HTTP server</td><td><code>mcp_server.py:4632</code></td></tr>
+      <tr><td>Request serialization lock</td><td><code>mcp_server.py:4569</code></td></tr>
+      <tr><td>Per-op lock + thread-local re-entrancy</td><td><code>palace.py:1043</code></td></tr>
+    </tbody>
+  </table>
+
+  <footer class="doc">
+    rawgentic-memorypalace · docs/runbooks/2026-07-12-mempalace-mcp-http-owner ·
+    unit: deploy/mempalace-mcp-http.service · upstream: MemPalace/mempalace#1998
+  </footer>
+</div>
