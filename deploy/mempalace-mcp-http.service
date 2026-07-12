@@ -1,0 +1,28 @@
+[Unit]
+Description=MemPalace MCP HTTP owner (single-writer, serves all Claude sessions over /mcp)
+Documentation=https://github.com/MemPalace/mempalace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rocky00717
+Group=rocky00717
+WorkingDirectory=/home/rocky00717
+# ALLOW_PEER_WRITER=1 disables the process-lifetime writer PRE-lease (which is
+#   thread-pinned and self-conflicts under ThreadingHTTPServer). The per-write
+#   mine_palace_lock (LOCK_NB, palace.py) still fires on every write and still
+#   prevents concurrent Chroma writes cross-process, so this is safe for a SINGLE
+#   owner. Do NOT run a second mempalace writer (stdio session or extra owner)
+#   against this palace while this service runs.
+# IDLE_HOURS=0 disables the idle-exit watchdog so the owner is always up.
+Environment=MEMPALACE_MCP_ALLOW_PEER_WRITER=1
+Environment=MEMPALACE_MCP_IDLE_HOURS=0
+ExecStart=/home/rocky00717/.local/share/pipx/venvs/mempalace/bin/mempalace-mcp --transport http --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=5s
+StandardOutput=append:/var/log/mempalace-mcp-http.log
+StandardError=append:/var/log/mempalace-mcp-http.log
+
+[Install]
+WantedBy=multi-user.target
