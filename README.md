@@ -293,6 +293,10 @@ The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason
 
 ## Changelog
 
+### v0.5.0 (2026-07-14)
+
+- **`/rawgentic-memorypalace:mempalace-save` skill — bundle session checkpointing into the plugin.** Promotes the `mempalace-save` workspace skill into the plugin as `rawgentic-memorypalace:mempalace-save`: writes an AAAK-compressed diary entry (`mempalace_diary_write`) plus verbatim drawers (`mempalace_add_drawer`) for key decisions/code/quotes, with writer-lease-busy, secrets-by-name, and privacy guardrails. The write-side companion to `/rawgentic-memorypalace:recall`. The server address is resolved from the user-configured MCP connection — never hardcoded; a regression-guard test (`tests/test_save_skill.py`) forbids a bundled IP.
+
 ### v0.4.5 (2026-07-08)
 
 - **PreCompact degraded path (rawgentic#306) + dead fail-closed block fixed.** The PreCompact block-on-save-failure path was dead code — `SAVE_OUTPUT=$(...) || true` left `SAVE_EXIT` always 0, and a mempalace outage exits the fork 0 anyway (failure reported only in prose) — so every fork failure silently *approved with no save*. Success now requires exit 0 AND the "Saved … drawer/diary" confirmation; on failure the session transcript is copied to a local fallback (`MEMPALACE_PRECOMPACT_FALLBACK_DIR`, default `~/.mempalace-wrapper-state/precompact-fallback/`) and compaction is approved with a loud DEGRADED reason (stderr + log + reason); compaction blocks only when BOTH the mempalace save and the local fallback fail. Red-first: outage, both-fail, prose-failure, and healthy-path pin tests.
