@@ -202,14 +202,16 @@ values open at the boundary and makes an as-of query return two.
 **Parsing the argument:** the text after `supersede` is `"<subject> <predicate> <old> -> <new>"`
 (with or without quotes).
 
-1. Split the text once on the literal ` -> ` (the arrow). If there is no `->`, STOP and show
-   the expected-format message below.
-2. **`new_object`** = everything to the RIGHT of the arrow, trimmed. If it is empty, STOP with
-   the expected-format message.
-3. Tokenize the text to the LEFT of the arrow: the **first word** is `subject`, the **second
-   word** is `predicate` (a single token, e.g. `decided`, `uses_model`, `works_at`), and the
-   **remaining words** are `old_object`. If the left side has fewer than three words, STOP with
-   the expected-format message.
+1. First strip any surrounding single or double quotes from the whole argument (the search
+   branch in Section 2 does the same), then find the first `->` (the arrow). If there is no
+   `->`, STOP and show the expected-format message below.
+2. Split once on that first `->`: **`new_object`** = everything to its RIGHT, trimmed of
+   whitespace. If it is empty, STOP with the expected-format message.
+3. Tokenize the text to the LEFT of the arrow (trimmed): the **first word** is `subject`, the
+   **second word** is `predicate`, and the **remaining words** are `old_object`. `subject` and
+   `predicate` are each a **single token** (predicate e.g. `decided`, `uses_model`, `works_at`);
+   a subject or predicate containing spaces is not supported. If the left side has fewer than
+   three words, STOP with the expected-format message.
 
 The optional `at` boundary (a backdated supersede) is not parsed here — the server defaults to now.
 
