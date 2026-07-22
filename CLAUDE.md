@@ -45,3 +45,19 @@ prompts (Layer 2), but mid-reasoning recall is your responsibility (Layer 3).
 
 If you find a contradiction with a stored decision (Layer 4 fact-check
 catches some automatically), surface it explicitly to the user.
+
+**Recording a single-valued fact structurally (three-way KG rule).** When a decision or
+other single-valued fact (the model in use, an employer, an address) is established or
+changes, write it to the knowledge graph so point-in-time ("as-of") queries stay correct.
+Pick exactly ONE primitive by what happened to the fact:
+
+- value **CHANGED** (a decision reversed, a model/employer swapped) →
+  `kg_supersede(subject, predicate, old, new)` — one atomic boundary
+  (`/rawgentic-memorypalace:recall supersede "<subject> <predicate> <old> -> <new>"`);
+- fact **ENDED** (no longer true, nothing replaces it) → `kg_invalidate`
+  (`/rawgentic-memorypalace:recall invalidate`);
+- new **INDEPENDENT / concurrent** fact → `kg_add` (recorded on `mempalace-save`).
+
+Never hand-roll `kg_invalidate` + `kg_add` for a *changed* value — that leaves the old and
+new value both open at the boundary, so an as-of query returns two. A reversed decision is a
+supersede, not an invalidate-then-add.

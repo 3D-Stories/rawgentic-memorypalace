@@ -1,7 +1,7 @@
 ---
 name: rawgentic-memorypalace:recall
-description: Search long-term memory, invalidate stale decisions, view decision timelines, or browse cross-project tunnels. Supports subcommands: search (default), invalidate, timeline, tunnels.
-argument-hint: <query> | invalidate "<subject> decided <object>" | timeline <entity> | tunnels [wing] | --project <name>
+description: Search long-term memory, invalidate stale decisions, supersede a changed decision, view decision timelines, or browse cross-project tunnels. Supports subcommands: search (default), invalidate, supersede, timeline, tunnels.
+argument-hint: <query> | invalidate "<subject> decided <object>" | supersede "<subject> <predicate> <old> -> <new>" | timeline <entity> | tunnels [wing] | --project <name>
 ---
 
 <role>
@@ -18,6 +18,7 @@ Search your long-term memory for past decisions, discoveries, and events.
 /rawgentic-memorypalace:recall <query>
 /rawgentic-memorypalace:recall <query> --project <project-name>
 /rawgentic-memorypalace:recall invalidate "<subject> decided <object>"
+/rawgentic-memorypalace:recall supersede "<subject> <predicate> <old> -> <new>"
 /rawgentic-memorypalace:recall timeline <entity>
 /rawgentic-memorypalace:recall tunnels [wing]
 ```
@@ -29,9 +30,17 @@ Search your long-term memory for past decisions, discoveries, and events.
 Check the first word of the arguments to determine the subcommand:
 
 - **`invalidate`** → go to **Section 5: Invalidate a Decision**
+- **`supersede`** → go to **Section 5b: Supersede a Changed Fact**
 - **`timeline`** → go to **Section 6: View Timeline**
 - **`tunnels`** → go to **Section 7: Browse Cross-Project Tunnels**
 - **Anything else** → treat as a search query, continue to Step 2
+
+> **Which KG write?** For a single-valued fact whose value **changes** (a decision reversed,
+> a model or employer swapped) use `supersede` — one atomic boundary. For a fact that merely
+> **ended** use `invalidate`. For a new **independent/concurrent** fact, record it via
+> `/rawgentic-memorypalace:mempalace-save` (which calls `mempalace_kg_add`). Do NOT hand-roll
+> `invalidate` + `add` for a changed value — that leaves the old and new both open at the
+> boundary, so an as-of query returns two values.
 
 For search queries, extract:
 - **Query text:** Everything that is not a flag. Remove surrounding quotes if present.
@@ -175,6 +184,64 @@ If the tool reports no matching triple:
 ```
 No matching active decision found for: <subject> decided <object>
 The triple may not exist or may already be invalidated.
+```
+
+If the MCP tool is not available (mempalace plugin not installed): tell the user "The mempalace MCP server is not connected. Ensure the mempalace plugin is installed and active." and STOP.
+
+---
+
+### 5b. Supersede a Changed Fact
+
+When the first argument is `supersede`, the user is recording that a **single-valued fact
+changed value** — a decision reversed, a model or employer swapped, an address updated. This
+is the atomic replacement primitive (`mempalace_kg_supersede`): it closes the old value and
+opens the new one at ONE shared boundary, so a point-in-time query at the boundary returns
+only the new value. Use it instead of a hand-rolled `invalidate` + `add`, which leaves both
+values open at the boundary and makes an as-of query return two.
+
+**Parsing the argument:** the text after `supersede` is `"<subject> <predicate> <old> -> <new>"`
+(with or without quotes).
+
+1. Split the text once on the literal ` -> ` (the arrow). If there is no `->`, STOP and show
+   the expected-format message below.
+2. **`new_object`** = everything to the RIGHT of the arrow, trimmed. If it is empty, STOP with
+   the expected-format message.
+3. Tokenize the text to the LEFT of the arrow: the **first word** is `subject`, the **second
+   word** is `predicate` (a single token, e.g. `decided`, `uses_model`, `works_at`), and the
+   **remaining words** are `old_object`. If the left side has fewer than three words, STOP with
+   the expected-format message.
+
+The optional `at` boundary (a backdated supersede) is not parsed here — the server defaults to now.
+
+Example: `/rawgentic-memorypalace:recall supersede "rawgentic decided use-Zod -> use-Valibot"`
+→ subject=`rawgentic`, predicate=`decided`, old_object=`use-Zod`, new_object=`use-Valibot`.
+
+If the text cannot be parsed, tell the user and STOP:
+
+```
+Expected format: /rawgentic-memorypalace:recall supersede "<subject> <predicate> <old> -> <new>" (e.g. "rawgentic decided use-Zod -> use-Valibot")
+```
+
+**Call the MCP tool directly:**
+
+Use the `mempalace_kg_supersede` MCP tool with these parameters:
+- `subject`: the parsed subject
+- `predicate`: the parsed predicate
+- `old_object`: the parsed old value
+- `new_object`: the parsed new value
+
+**Display confirmation:**
+
+If the tool succeeds:
+```
+Superseded: **<subject> <predicate>** — **<old_object>** -> **<new_object>**
+The old value is closed and the new value opened at one boundary; an as-of query now returns only the new value.
+```
+
+If the tool reports no matching active triple:
+```
+No matching active fact found for: <subject> <predicate> <old_object>
+Nothing was superseded — check the subject/predicate/old value, or use invalidate/add if this is not a value change.
 ```
 
 If the MCP tool is not available (mempalace plugin not installed): tell the user "The mempalace MCP server is not connected. Ensure the mempalace plugin is installed and active." and STOP.

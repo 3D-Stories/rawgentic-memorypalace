@@ -183,3 +183,81 @@ class TestRecallSubcommandDispatch:
                 or "first word" in body.lower()), (
             "Skill must have subcommand dispatch logic"
         )
+
+
+class TestRecallSupersedeSubcommand:
+    """Validate /recall supersede subcommand content (issue #64, AC1)."""
+
+    def _read_body(self):
+        content = SKILL_FILE.read_text()
+        return content.split("---", 2)[2]
+
+    def test_supersede_subcommand_documented(self):
+        body = self._read_body()
+        assert "supersede" in body.lower(), (
+            "Skill must document the supersede subcommand (#64 AC1)"
+        )
+
+    def test_supersede_uses_mcp_tool(self):
+        body = self._read_body()
+        assert "mempalace_kg_supersede" in body, (
+            "Supersede subcommand must reference the mempalace_kg_supersede MCP tool (#64 AC1)"
+        )
+
+    def test_supersede_parses_old_and_new(self):
+        body = self._read_body()
+        assert "old_object" in body and "new_object" in body, (
+            "Supersede must parse old_object and new_object for the boundary (#64 AC1)"
+        )
+
+    def test_supersede_documents_arrow_separator(self):
+        body = self._read_body()
+        assert "->" in body, (
+            "Supersede must document the '->' separator between old and new values (#64 AC1)"
+        )
+
+    def test_supersede_has_expected_format_message(self):
+        body = self._read_body()
+        # a parse error must emit an expected-format message naming supersede
+        fmt_lines = [ln for ln in body.splitlines() if "expected format" in ln.lower()]
+        assert any("supersede" in ln.lower() for ln in fmt_lines), (
+            "Supersede must give an 'Expected format' message on parse error (#64 AC1)"
+        )
+
+    def test_supersede_advertised_in_frontmatter(self):
+        content = SKILL_FILE.read_text()
+        frontmatter = content.split("---", 2)[1]
+        assert "supersede" in frontmatter, (
+            "Frontmatter (description/argument-hint) must advertise supersede (#64 AC1)"
+        )
+
+    def test_supersede_routed_in_dispatch(self):
+        body = self._read_body()
+        # the subcommand-dispatch block (Section 1, before "### 2.") must route supersede
+        dispatch = body.split("### 2.")[0]
+        assert "supersede" in dispatch.lower(), (
+            "Subcommand dispatch must route the 'supersede' subcommand (#64 AC1)"
+        )
+
+    def test_supersede_distinguished_from_invalidate(self):
+        body = self._read_body().lower()
+        # the three-way pointer: changed value -> supersede (vs ended -> invalidate)
+        assert "changes" in body or "changed" in body, (
+            "Supersede guidance must explain it is for a CHANGED single-valued fact "
+            "(vs invalidate for an ended fact) (#64 AC1)"
+        )
+
+
+class TestRecallInvalidateTimelineUnchanged:
+    """AC4 regression guard: invalidate + timeline routes stay intact after #64."""
+
+    def _read_body(self):
+        return SKILL_FILE.read_text().split("---", 2)[2]
+
+    def test_invalidate_still_routes_to_mcp_tool(self):
+        body = self._read_body()
+        assert "mempalace_kg_invalidate" in body, "invalidate route must survive #64 (AC4)"
+
+    def test_timeline_still_routes_to_mcp_tool(self):
+        body = self._read_body()
+        assert "mempalace_kg_timeline" in body, "timeline route must survive #64 (AC4)"
