@@ -1,0 +1,196 @@
+<meta charset="utf-8">
+<title>Second Brain — July 2026 Research & Scope</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#fdfdfc; --ink:#1f2833; --ink2:#4b5665; --ink3:#7b8494;
+  --line:#dde1e7; --accent:#9a6a00;
+  --data:#2a78d6; --good:#1baf7a; --warn:#eda100; --bad:#e34948; --dead:#c6ccd4;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#161c24; --panel:#1d2531; --ink:#e8ecf1; --ink2:#aab4c2; --ink3:#7e8998;
+  --line:#313c4b; --accent:#e0a83c;
+  --data:#3987e5; --good:#199e70; --warn:#c98500; --bad:#e66767; --dead:#46505e;
+}}
+:root[data-theme="dark"]{
+  --bg:#161c24; --panel:#1d2531; --ink:#e8ecf1; --ink2:#aab4c2; --ink3:#7e8998;
+  --line:#313c4b; --accent:#e0a83c;
+  --data:#3987e5; --good:#199e70; --warn:#c98500; --bad:#e66767; --dead:#46505e;
+}
+:root[data-theme="light"]{
+  --bg:#f6f7f9; --panel:#fdfdfc; --ink:#1f2833; --ink2:#4b5665; --ink3:#7b8494;
+  --line:#dde1e7; --accent:#9a6a00;
+  --data:#2a78d6; --good:#1baf7a; --warn:#eda100; --bad:#e34948; --dead:#c6ccd4;
+}
+body{background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; margin:0;}
+.wrap{max-width:1020px; margin:0 auto; padding:40px 24px 72px; display:flex; flex-direction:column; gap:38px;}
+h1,h2,h3{font-family:"Iowan Old Style",Palatino,"Palatino Linotype",Georgia,serif; text-wrap:balance; margin:0;}
+h1{font-size:2.1rem; line-height:1.15;}
+h2{font-size:1.35rem; border-bottom:1px solid var(--line); padding-bottom:8px;}
+p{margin:0; max-width:74ch;}
+.eyebrow{font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:600;}
+.muted{color:var(--ink2);}
+.small{font-size:.85rem; color:var(--ink3);}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-variant-numeric:tabular-nums;}
+.verdict{background:var(--panel); border:1px solid var(--line); border-left:5px solid var(--good); border-radius:6px; padding:20px 24px; display:flex; flex-direction:column; gap:8px;}
+.verdict strong{color:var(--good); letter-spacing:.04em;}
+.constraints{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px;}
+.con{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:12px 15px; font-size:.86rem; color:var(--ink2);}
+.con b{color:var(--ink); display:block; margin-bottom:2px; font-size:.8rem; letter-spacing:.06em; text-transform:uppercase;}
+.tblwrap{overflow-x:auto; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:6px 16px;}
+table{border-collapse:collapse; width:100%; font-size:.86rem;}
+th{text-align:left; font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink3); padding:10px 12px 6px 0; border-bottom:1px solid var(--line); white-space:nowrap;}
+td{padding:9px 12px 9px 0; border-bottom:1px solid var(--line); vertical-align:top; color:var(--ink2);}
+tr:last-child td{border-bottom:none;}
+td:first-child{white-space:nowrap; font-weight:650; color:var(--ink);}
+td.c{text-align:center; font-weight:700;}
+.y{color:var(--good);} .n{color:var(--bad);} .p{color:var(--warn);}
+code{font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.85em; background:color-mix(in srgb,var(--line) 45%,transparent); padding:1px 5px; border-radius:4px;}
+.arch{display:flex; flex-direction:column; gap:0; align-items:stretch;}
+.node{background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:14px 18px;}
+.node h3{font-size:.95rem; font-family:system-ui,sans-serif; font-weight:700; margin-bottom:3px;}
+.node p{font-size:.85rem; color:var(--ink2); max-width:none;}
+.node.hot{border-left:4px solid var(--data);}
+.node.brain{border-left:4px solid var(--accent);}
+.node.dim{border-left:4px solid var(--dead);}
+.flow{align-self:center; color:var(--ink3); font-size:.78rem; padding:6px 0; display:flex; align-items:center; gap:8px;}
+.flow::before,.flow::after{content:""; display:block; width:1px; height:14px; background:var(--line);}
+.retire{background:color-mix(in srgb,var(--bad) 8%,var(--panel)); border:1px dashed var(--bad); border-radius:6px; padding:12px 16px; font-size:.86rem; color:var(--ink2);}
+.retire b{color:var(--bad);}
+.epic{display:grid; grid-template-columns:56px 1fr 60px; gap:12px; align-items:start; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:12px 16px;}
+.epics{display:flex; flex-direction:column; gap:8px;}
+.eid{font-weight:800; font-family:ui-monospace,Menlo,monospace; color:var(--accent); padding-top:1px;}
+.epic h3{font-size:.92rem; font-family:system-ui,sans-serif; font-weight:650; margin-bottom:2px;}
+.epic p{font-size:.83rem; color:var(--ink2); max-width:none;}
+.size{font-size:.7rem; font-weight:700; letter-spacing:.08em; color:var(--ink3); text-align:right; padding-top:3px;}
+.gate{border-left:4px solid var(--warn);}
+.kills{display:grid; grid-template-columns:repeat(auto-fit,minmax(185px,1fr)); gap:10px;}
+.kill{background:var(--panel); border:1px solid var(--line); border-top:3px solid var(--warn); border-radius:6px; padding:12px 14px;}
+.kill .n2{font-size:1.3rem; font-weight:700; font-family:ui-monospace,Menlo,monospace; color:var(--ink);}
+.kill .l{font-size:.78rem; color:var(--ink2); line-height:1.35;}
+footer{font-size:.8rem; color:var(--ink3); border-top:1px solid var(--line); padding-top:14px;}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">rawgentic workspace · memory research &amp; scope · 2026-07-08</div>
+  <h1>The second brain: July-2026 research, and the build plan</h1>
+  <p class="muted" style="margin-top:8px">Follow-up to the memory audit (verdict: accumulating, not learning). Live survey of the July-2026 memory landscape, scored against the audit's seven disqualifiers, then scoped into a standalone brain that rawgentic hooks into.</p>
+</header>
+
+<section class="verdict">
+  <div class="eyebrow" style="color:var(--good)">Recommendation</div>
+  <p><strong>Native-first working memory + a standalone, self-hosted, typed second brain — storage engine chosen by a bake-off on our own data.</strong> Nothing off-the-shelf ships retrieval telemetry (the audit's #1 gap), so it's custom work under every option. Curation — not storage — is what separates systems, and the strongest curation in the market is Claude Code's own auto-memory. The engine underneath is a commodity; the bake-off picks it with evidence instead of a bet.</p>
+</section>
+
+<section>
+  <h2>Owner constraints (2026-07-08)</h2>
+  <div class="constraints" style="margin-top:12px">
+    <div class="con"><b>Best &gt; quickest</b>Long-term solution wins; open to full replacement of mempalace</div>
+    <div class="con"><b>Self-hosted</b>No paid service; an unused mem0 Docker container exists (location TBD)</div>
+    <div class="con"><b>AI-first memory</b>Human readability not required; "remind me about the decision on xyz" must work</div>
+    <div class="con"><b>Standalone from rawgentic</b>Own plugin + service, any-workspace usable; rawgentic couples via hooks — same pattern as rawgentic-memorypalace today</div>
+  </div>
+</section>
+
+<section>
+  <h2>The July-2026 landscape vs the audit's disqualifiers</h2>
+  <p class="small" style="margin:10px 0 12px">✓ ships it · ~ partial · ✗ missing. Full sourcing in the research report; adversarial notes below the table.</p>
+  <div class="tblwrap">
+  <table>
+    <tr><th>Requirement</th><th>Native auto-mem</th><th>mempalace</th><th>claude-mem</th><th>mem0 self-host</th><th>Zep/Graphiti</th><th>Letta</th></tr>
+    <tr><td>Retrieval telemetry</td><td class="c n">✗</td><td class="c n">✗</td><td class="c n">✗</td><td class="c n">✗</td><td class="c n">✗</td><td class="c n">✗</td></tr>
+    <tr><td>Curation at write</td><td class="c y">✓</td><td class="c n">✗</td><td class="c y">✓</td><td class="c p">~</td><td class="c y">✓</td><td class="c p">~</td></tr>
+    <tr><td>Correction propagation</td><td class="c p">~</td><td class="c n">✗</td><td class="c p">~</td><td class="c p">~</td><td class="c y">✓</td><td class="c p">~</td></tr>
+    <tr><td>Injection budget</td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td><td class="c n">✗</td><td class="c p">~</td></tr>
+    <tr><td>Session-scoped</td><td class="c y">✓</td><td class="c n">✗</td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td></tr>
+    <tr><td>Compaction-heavy safe</td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td><td class="c n">✗</td><td class="c n">✗</td></tr>
+    <tr><td>Resurface + decay</td><td class="c p">~</td><td class="c n">✗</td><td class="c y">✓</td><td class="c p">~</td><td class="c y">✓</td><td class="c p">~</td></tr>
+    <tr><td>Self-hosted viable</td><td class="c y">✓</td><td class="c y">✓</td><td class="c y">✓</td><td class="c p">~</td><td class="c n">✗</td><td class="c y">✓</td></tr>
+  </table>
+  </div>
+  <p class="small" style="margin-top:10px">Adversarial highlights: mempalace upstream through v3.5.0 ships no telemetry/decay/dedup/contradiction-detection, and its 96.6% benchmark "actually measures ChromaDB's default embedding performance… not MemPalace" (independent analysis). mem0 self-host is second-class ("the hosted platform is the real product") with reported indexing reliability issues. Zep's full-feature self-host is deprecated; ~600k-token conversation footprint reported. Letta: framework lock-in, unverifiable claims. claude-mem has the best decay design (typed TTL) but is a second opinionated hook pipeline.</p>
+</section>
+
+<section>
+  <h2>Paid options — evaluated, none change the verdict</h2>
+  <div class="tblwrap" style="margin-top:12px">
+  <table>
+    <tr><th>Option</th><th>Cost</th><th>As agent-memory engine</th><th>Role, if any</th></tr>
+    <tr><td>Notion + official MCP</td><td>workspace plans</td><td>No typed schema / supersession / telemetry; cloud-only; workspace memories egress to a third party</td><td>Human knowledge surface — not memory</td></tr>
+    <tr><td>Obsidian (+ Sync)</td><td>app free; Sync ~$4–8/mo</td><td>Plain files: no types, no bi-temporal, no telemetry. ~40% token-savings claims are self-reported</td><td><b>Optional later add-on:</b> Sync + vault view over the brain's plain-text export, near-zero integration cost</td></tr>
+    <tr><td>supermemory</td><td>~$19/mo Pro</td><td>Deepest Claude MCP integration in the paid PKM class; cloud-only, PKM-oriented</td><td>None — egress objection</td></tr>
+    <tr><td>mem0 Pro</td><td>$19/mo; graph $249/mo</td><td>The tier whose reliability the ecosystem actually praises (SOC 2, HIPAA) — but cloud egress + benchmark ambiguity</td><td>None — self-host preference</td></tr>
+    <tr><td>Zep Cloud</td><td>$25/mo graph; ~$15/M tok</td><td>Best temporal accuracy (63.8%) and now the ONLY Zep — CE self-host deprecated; heavy token footprint, ~4s latency</td><td>None — cloud-only</td></tr>
+  </table>
+  </div>
+  <p class="small" style="margin-top:10px">Owner preference: self-hosted over paid service. Every cloud option also ships zero retrieval telemetry — the same custom work remains, plus egress of infra-adjacent memories.</p>
+</section>
+
+<section>
+  <h2>Target architecture</h2>
+  <div class="arch" style="margin-top:12px">
+    <div class="node dim">
+      <h3>CLAUDE.md tiers — the contract</h3>
+      <p>Unchanged. Loaded verbatim every session. Rules only; L4 of the promotion ladder.</p>
+    </div>
+    <div class="flow">always loaded</div>
+    <div class="node hot">
+      <h3>Working memory — native auto-memory as a FROZEN pointer index (owner #304)</h3>
+      <p>MEMORY.md stays within the native hard cap (200 lines / 25KB) as a thin pointer index into brain records — no new substantive content lands here. Topic files become brain-derived read caches. Per-repo scoped, compaction-safe, Anthropic-maintained loading. The current 217-file dir migrates INTO the brain (E6).</p>
+    </div>
+    <div class="flow">scheduled promote-pass (recurred ≥2 sessions · burned &gt;30 min · cross-project)</div>
+    <div class="node brain">
+      <h3>Second brain — standalone plugin + service (this repo evolves into it)</h3>
+      <p>Typed records (<code>decision</code> / <code>gotcha</code> / <code>reference</code> / <code>diary</code> / <code>session-state</code>) · bi-temporal supersession (facts carry validity intervals — "the decision about xyz" is a timeline query) · dedup-at-write on semantic chunks · typed TTL decay (session-state 90d; decisions durable, die only by supersession) · <b>retrieval telemetry on every search</b> · MCP tools + HTTP for hooks · zero rawgentic imports, graceful degradation when absent.</p>
+    </div>
+    <div class="flow">explicit recall only — user-asked or model-initiated, ≤8 KB payload</div>
+    <div class="node dim">
+      <h3>Capture (unchanged shape)</h3>
+      <p><code>.remember</code> staging → Haiku consolidation (+ new promote-pass output) · PreCompact primary, 2h timer, Stop as flush only — built for sessions that run for weeks.</p>
+    </div>
+  </div>
+  <div class="retire" style="margin-top:12px"><b>Retired:</b> the per-prompt semantic auto-inject channel — 87% bulk-doc noise, ~zero proven behavioral value in 114 transcripts. Behind a flag first; deleted after the 30-day review passes.</div>
+</section>
+
+<section>
+  <h2>Engine bake-off — how "best" gets decided</h2>
+  <div class="tblwrap" style="margin-top:12px">
+  <table>
+    <tr><th>Candidate</th><th>Why it's in</th><th>Known risk going in</th></tr>
+    <tr><td>keep-ChromaDB</td><td>Current palace data as-is; zero migration for the trial</td><td>Engine of the system the audit failed; upstream roadmap not aligned</td></tr>
+    <tr><td>mem0-OSS</td><td>Owner already has a container; fastest ecosystem integration</td><td>Self-host second-class; reported indexing reliability issues; LongMemEval 49%</td></tr>
+    <tr><td>custom-lean (sqlite-vec)</td><td>Boring, swappable, zero external deps; full control of typed schema</td><td>We own maintenance forever</td></tr>
+  </table>
+  </div>
+  <p class="small" style="margin-top:10px">Judged on OUR data: the repo's existing ground-truth R@1/R@5 framework + 20 real owner queries ("remind me about…"), plus latency, ops footprint on .205, and integration cost. Tie goes to lower maintenance.</p>
+</section>
+
+<section>
+  <h2>Epic — eight WF2-sized issues, telemetry first</h2>
+  <div class="epics" style="margin-top:12px">
+    <div class="epic"><span class="eid">E1</span><div><h3>Retrieval telemetry on the CURRENT stack</h3><p>The instrument everything else is judged by. 7 days of baseline data is the exit gate — even a stalled program leaves the audit's #1 gap closed.</p></div><span class="size">S</span></div>
+    <div class="epic"><span class="eid">E2</span><div><h3>Owner-query eval set + harness</h3><p>20 real "remind me…" questions with graded answers; runs against any engine via one storage interface.</p></div><span class="size">S</span></div>
+    <div class="epic gate"><span class="eid">E3</span><div><h3>Engine bake-off (time-boxed spike) → OWNER GATE</h3><p>keep-Chroma vs mem0-OSS vs custom-lean, scored on E2 + ops cost. Decision record; owner signs the engine choice.</p></div><span class="size">M</span></div>
+    <div class="epic"><span class="eid">E4</span><div><h3>Brain service v1 — standalone plugin + service</h3><p>Typed schema, bi-temporal supersession, dedup-at-write, MCP tools, telemetry native from day one. Zero rawgentic imports; no-rawgentic-workspace smoke test.</p></div><span class="size">L</span></div>
+    <div class="epic"><span class="eid">E5</span><div><h3>Curated migration</h3><p>~1,050 typed drawers in (decisions, reference, conventions, gotchas, diary). The 18,731-drawer documentation room and dormant wings deliberately stay out. Reversible — source untouched.</p></div><span class="size">M</span></div>
+    <div class="epic"><span class="eid">E6</span><div><h3>Auto-memory freeze &amp; pointerization (owner #304)</h3><p>217-file dir content migrates INTO the brain; MEMORY.md becomes a frozen thin pointer index; guard flags any new substantive content added there.</p></div><span class="size">M</span></div>
+    <div class="epic"><span class="eid">E7</span><div><h3>Capture rewire</h3><p>Promote-pass in consolidation; hooks point at brain; auto-inject retired behind flag; session-scoped <code>resolve_project</code> (F9) red-before-green.</p></div><span class="size">M</span></div>
+    <div class="epic gate"><span class="eid">E8</span><div><h3>30-day review gate</h3><p>Telemetry report vs kill criteria. Flag flip permanent or rollback; palace cold-archived; CLAUDE.md docs updated.</p></div><span class="size">S</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Kill criteria — beat these in 30 days or roll back</h2>
+  <div class="kills" style="margin-top:12px">
+    <div class="kill"><div class="n2">≥30%</div><div class="l">of explicit brain recalls actually used in subsequent work (baseline auto-inject ≈ 0, unmeasurable)</div></div>
+    <div class="kill"><div class="n2">&lt;10%</div><div class="l">of recalled items from bulk-doc or dormant sources (baseline: 87% + 27%)</div></div>
+    <div class="kill"><div class="n2">≥80%</div><div class="l">accuracy on the 20-question owner-query set (baseline measured in E3)</div></div>
+    <div class="kill"><div class="n2">≤18.1k</div><div class="l">tokens session-start memory load; recall payload ≤ 8 KB always</div></div>
+    <div class="kill"><div class="n2">0</div><div class="l">known-superseded facts served as current in the E8 spot-check (baseline: live RLS case)</div></div>
+  </div>
+</section>
+
+<footer>
+  Research report: <span class="mono">docs/reviews/2026-07-08-memory-brain-research.md</span> · scope: <span class="mono">docs/planning/2026-07-08-second-brain-architecture-scope.md</span> · builds on audit F1–F10 (PR #51) · not checked: ossinsight taxonomy piece (fetch blocked), mem0 container location, Cognee beyond marketing, single-source Zep figures · no hands-on benchmarking yet — that is E3's job, by design.
+</footer>
+</div>
