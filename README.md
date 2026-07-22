@@ -293,6 +293,10 @@ The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason
 
 ## Changelog
 
+### v0.7.0 (2026-07-22)
+
+- **`recall supersede` + the three-way KG write rule (rawgentic#64).** `/rawgentic-memorypalace:recall` gains a `supersede` subcommand — `supersede "<subject> <predicate> <old> -> <new>"` calls `mempalace_kg_supersede`, the atomic primitive for a single-valued fact that CHANGES value (a decision reversed, a model/employer swapped); it closes the old value and opens the new one at one shared boundary, so an as-of query returns only the new value. Parse errors return an expected-format message. `mempalace-save` and the project memory-authority guidance now state the three-way rule: value **CHANGED** → `kg_supersede` (one atomic boundary), fact **ENDED** → `kg_invalidate`, new **INDEPENDENT** fact → `kg_add` — never hand-roll `invalidate` + `add` for a change (it leaves the old and new value both open at the boundary). Existing `invalidate`/`timeline` routes are unchanged. (The v0.6.0 plugin bump in #63 shipped without a Changelog entry — a pre-existing gap, noted, not addressed here.)
+
 ### v0.5.0 (2026-07-14)
 
 - **`/rawgentic-memorypalace:mempalace-save` skill — bundle session checkpointing into the plugin.** Promotes the `mempalace-save` workspace skill into the plugin as `rawgentic-memorypalace:mempalace-save`: writes an AAAK-compressed diary entry (`mempalace_diary_write`) plus verbatim drawers (`mempalace_add_drawer`) for key decisions/code/quotes, with writer-lease-busy, secrets-by-name, and privacy guardrails. The write-side companion to `/rawgentic-memorypalace:recall`. The server address is resolved from the user-configured MCP connection — never hardcoded; a regression-guard test (`tests/test_save_skill.py`) forbids a bundled IP.

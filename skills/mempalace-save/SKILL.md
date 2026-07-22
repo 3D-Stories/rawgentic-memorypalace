@@ -24,7 +24,22 @@ server address. MemPalace is the authoritative long-term memory.
    exact recall — owner decisions with their exact wording, load-bearing code snippets,
    quotes, gotchas with file:line anchors. Check for an existing drawer first when updating
    a fact (`mempalace_check_duplicate` / `mempalace_search`) rather than duplicating.
-3. **Confirm in ONE line:** `Saved N drawers + diary` — nothing else. Be thorough but
+3. **Knowledge-graph writes (new + changed single-valued facts):** the KG stores single-valued
+   facts (a decision, the model in use, an employer) as `subject predicate object` triples. When
+   this session established or altered such a fact, write it structurally so point-in-time
+   ("as-of") queries stay correct. Pick exactly ONE of the three primitives by what happened to
+   the fact — this is the three-way rule:
+   - **Value CHANGED** (a decision reversed, a model/employer/address swapped) →
+     `mempalace_kg_supersede(subject, predicate, old_object, new_object)`. One atomic boundary:
+     the old value closes and the new opens together, so an as-of query at the boundary returns
+     only the new value. Do NOT hand-roll `invalidate` + `add` for a change — that leaves the old
+     and new both open at the boundary and an as-of query then returns two values.
+   - **Fact ENDED** (no longer true, and nothing replaces it) →
+     `mempalace_kg_invalidate(subject, predicate, object)`.
+   - **New INDEPENDENT / concurrent fact** (nothing it replaces) → `mempalace_kg_add(...)`.
+
+   Skip this step when the session established no new or changed single-valued fact.
+4. **Confirm in ONE line:** `Saved N drawers + diary` — nothing else. Be thorough but
    fast; this often runs right before a /clear.
 
 ## Guardrails
