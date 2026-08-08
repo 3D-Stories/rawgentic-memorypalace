@@ -57,35 +57,45 @@ was mined from, and those folders sort the content across 59 distinct paths:
 | `docs/archive/**` | `archive` | 5,251 |
 | `docs/plans`, `docs/planning`, `docs/roadmap` | `plans` | 3,877 |
 | `docs/superpowers/**`, `docs/specs` | `specs` | 1,954 |
-| `docs/reference`, `docs/domain`, `docs/quickstart` | `reference` | 1,148 |
-| `docs/runbooks`, `docs/operations`, `docs/monitoring`, `docs/deploy`, `docs/hardware` | `operations` | 875 |
-| `docs/design`, `docs/architecture`, `docs/ux-review` | `design` | 861 |
+| `docs/reference`, `docs/domain`, `docs/quickstart` | `reference` | 1,130 |
+| `docs/runbooks`, `docs/operations`, `docs/monitoring`, `docs/deploy`, `docs/hardware` | `operations` | 857 |
 | `docs/product` | `product` | 852 |
+| `docs/design`, `docs/architecture`, `docs/ux-review` | `design` | 787 |
 | `docs/features` | `features` | 723 |
-| `docs/migration` | `migration` | 576 |
-| `docs/TDD`, `docs/testing` | `testing` | 285 |
+| `docs/migration` | `migration` | 539 |
+| `docs/TDD`, `docs/testing` | `testing` | 278 |
 | `docs/sessions` | `sessions` | 271 |
 | `docs/analysis` | `analysis` | 265 |
 | `docs/SDLC` | `process` | 211 |
-| anything unmapped | stays `documentation` | 1,582 |
+| anything unmapped | stays `documentation` | 1,736 |
 
-**Dry run against the live palace: 17,149 of 18,731 drawers (91.5%) get a meaningful room.
-1,582 stay put.** Nothing is forced: an unrecognized source path keeps the residue room rather
+**Dry run against the live palace: 16,995 of 18,731 drawers (90.7%) get a meaningful room.
+1,736 stay put.** Nothing is forced: an unrecognized source path keeps the residue room rather
 than being guessed into a wrong one.
+
+Matching is on **path components**, not raw prefixes — a review pass found that a raw prefix
+swept `docs/archived`, `docs/plans-old` and `docs/productivity` into rooms they do not belong
+to. Fixing it moved 154 drawers back to the residue room, which is why the numbers here are
+slightly lower than a naive match would report.
 
 What that does to the biggest wings:
 
 ```
 chorestory (10,018)  archive 5159 · reference 1130 · product 852 · features 723 ·
-                     documentation 443 · design 394 · testing 278 · sessions 271 ·
-                     analysis 265 · process 211 · specs 184 · plans 71 · migration 37
-millions   (2,704)   plans 2497 · documentation 148 · design 41 · reference 18
+                     documentation 513 · design 361 · testing 278 · sessions 271 ·
+                     analysis 265 · process 211 · specs 184 · plans 71
+millions   (2,704)   plans 2497 · documentation 207
 sysop      (1,690)   operations 857 · migration 533 · specs 134 · archive 92 · documentation 74
 grocusave  (1,554)   specs 858 · plans 520 · documentation 176
-rawgentic  (1,309)   plans 559 · design 426 · documentation 271 · specs 46 · testing 7
+rawgentic  (1,309)   plans 559 · design 426 · documentation 278 · specs 46
 ```
 
-`chorestory` goes from one room to thirteen. That is the room dimension coming back to life.
+`chorestory` goes from one room to twelve. That is the room dimension coming back to life.
+
+Three wings gain nothing: `arc` (101), `snowgate` (19) and `nillerkgames` (4) stay entirely in
+the residue room, because their source folders are not ones the rules recognize. That is
+reported rather than forced — guessing a room for them would be inventing a taxonomy instead of
+reading one.
 
 **The naming rule, written down:** a room is a KIND of content, never a project. The project is
 the wing. A room name is a lowercase singular-or-plural noun naming what the content *is*
@@ -126,15 +136,25 @@ python -m rawgentic_memory.room_split --apply \
 python -m rawgentic_memory.room_split --revert --manifest revert-2026-08-08.json
 ```
 
-Four properties, each one a refusal rather than a hope:
+Six properties, each one a refusal rather than a hope:
 
-- **Dry run is the default.** `--apply` is the only path that writes.
-- **`--apply` refuses without `--i-have-a-verified-backup`.** The palace is 308 MB and a backup
-  nobody has restored is not a backup.
+- **Dry run is the default.**
+- **`--apply` AND `--revert` both write, and both refuse without
+  `--i-have-a-verified-backup`.** An earlier draft said "`--apply` is the only path that
+  writes" and then let `--revert` through without the flag; a review pass caught the
+  contradiction. The palace is 308 MB and a backup nobody has restored is not a backup.
 - **`--apply` refuses without `--manifest`,** and the manifest is written BEFORE anything
   changes. It records every drawer id with its old and new room, so `--revert` puts each one
   back exactly.
-- **A manifest is never overwritten.** Overwriting one would strand the drawers it describes.
+- **A manifest is never overwritten,** and it is created with exclusive mode rather than a
+  check-then-write, which had a window where another process could create the file and have it
+  truncated.
+- **A corrupt manifest is refused.** It carries a version and a move count, and a mismatch
+  raises. An empty-but-valid `{}` would otherwise revert nothing and report success — a
+  recovery command claiming it worked while the palace stays migrated.
+- **A partial write is refused, not reported.** Every id is checked before anything is written,
+  and a missing or duplicated id raises with nothing changed. A half-migrated palace that
+  automation reads as clean is the worst outcome available here.
 
 Both write paths are tested against a real ephemeral palace, not a mock: apply moves the
 drawers, revert restores them, every other metadata key survives, and the drawer count is
@@ -145,7 +165,7 @@ unchanged. A migration tool whose write path has never run is a claim, not a cap
 2 | Run the dry run and read the per-wing table | It is the diff. If a wing looks wrong, fix the rules before touching anything.
 3 | Apply with a dated manifest | `--apply --manifest revert-<date>.json --i-have-a-verified-backup`.
 4 | Re-run the AFTER measurement on the fixed query set | docs/reviews/2026-08-08-77-retrieval-query-set.json, unchanged. A query set edited between runs measures nothing.
-5 | Compare, and revert if it got worse | `--revert --manifest revert-<date>.json`. The number decides, not the feeling.
+5 | Compare, and revert if it got worse | `--revert --manifest revert-<date>.json --i-have-a-verified-backup`. The number decides, not the feeling.
 ```
 
 ---

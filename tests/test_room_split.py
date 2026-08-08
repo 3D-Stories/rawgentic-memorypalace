@@ -26,6 +26,23 @@ class TestProjectRelative:
     def test_an_empty_source_is_empty(self):
         assert room_split.project_relative("") == ""
 
+    def test_an_ordinary_absolute_path_still_anchors_on_docs(self):
+        """The next bulk mine will not come from the April staging directory. If
+        only that shape classified, the catch-all would rebuild itself."""
+        assert room_split.project_relative("/repo/docs/plans/x.md") == "docs/plans/x.md"
+        assert room_split.classify("/repo/docs/plans/x.md") == "plans"
+
+    def test_a_relative_path_anchors_too(self):
+        assert room_split.classify("myproject/docs/product/x.md") == "product"
+
+    def test_a_repeated_restage_component_does_not_break_the_anchor(self):
+        assert room_split.classify(
+            "/tmp/mempalace-restage/a/tmp/mempalace-restage/b/docs/plans/x.md"
+        ) == "plans"
+
+    def test_a_path_with_no_docs_component_stays_put(self):
+        assert room_split.classify("/repo/src/plans/x.md") == room_split.RESIDUE_ROOM
+
 
 class TestClassify:
     @pytest.mark.parametrize("path,room", [
@@ -59,6 +76,21 @@ class TestClassify:
 
     def test_a_missing_source_file_stays_put(self):
         assert room_split.classify("") == room_split.RESIDUE_ROOM
+
+    @pytest.mark.parametrize("path", [
+        "/tmp/mempalace-restage/p/docs/archived/x.md",
+        "/tmp/mempalace-restage/p/docs/plans-old/x.md",
+        "/tmp/mempalace-restage/p/docs/productivity/x.md",
+        "/tmp/mempalace-restage/p/docs/designers/x.md",
+    ])
+    def test_a_sibling_folder_sharing_a_prefix_is_not_swept_in(self, path):
+        """Matching is on component boundaries. Raw prefix matching would pull
+        `docs/archived` into `archive` and break the promise that an
+        unrecognized path stays put."""
+        assert room_split.classify(path) == room_split.RESIDUE_ROOM
+
+    def test_the_folder_itself_matches_without_a_child(self):
+        assert room_split.classify("/repo/docs/archive") == "archive"
 
 
 def _moves(*specs):
@@ -116,6 +148,61 @@ class TestManifest:
                 ("m", "/tmp/mempalace-restage/m/docs/plans/a.md"),
             ))
 
+    def test_records_a_version_and_a_count(self, tmp_path):
+        path = tmp_path / "revert.json"
+        room_split.write_manifest(str(path), _moves(
+            ("m", "/tmp/mempalace-restage/m/docs/plans/a.md"),
+        ))
+        payload = json.loads(path.read_text())
+        assert payload["manifest_version"] == room_split.MANIFEST_VERSION
+        assert payload["move_count"] == 1
+
+
+class TestReadManifest:
+    def test_an_empty_object_is_refused(self, tmp_path):
+        """It would otherwise revert nothing and report success — a recovery
+        command claiming it worked while the palace stays migrated."""
+        path = tmp_path / "m.json"
+        path.write_text("{}")
+        with pytest.raises(room_split.ManifestInvalid):
+            room_split.read_manifest(str(path))
+
+    def test_a_count_mismatch_is_refused(self, tmp_path):
+        path = tmp_path / "m.json"
+        path.write_text(json.dumps({
+            "manifest_version": room_split.MANIFEST_VERSION,
+            "source_room": "documentation",
+            "move_count": 5,
+            "moves": [{"id": "a", "from_room": "documentation", "to_room": "plans"}],
+        }))
+        with pytest.raises(room_split.ManifestInvalid):
+            room_split.read_manifest(str(path))
+
+    def test_a_wrong_version_is_refused(self, tmp_path):
+        path = tmp_path / "m.json"
+        path.write_text(json.dumps({
+            "manifest_version": 99, "source_room": "documentation",
+            "move_count": 0, "moves": [],
+        }))
+        with pytest.raises(room_split.ManifestInvalid):
+            room_split.read_manifest(str(path))
+
+    def test_a_row_missing_its_id_is_refused(self, tmp_path):
+        path = tmp_path / "m.json"
+        path.write_text(json.dumps({
+            "manifest_version": room_split.MANIFEST_VERSION,
+            "source_room": "documentation", "move_count": 1,
+            "moves": [{"from_room": "documentation", "to_room": "plans"}],
+        }))
+        with pytest.raises(room_split.ManifestInvalid):
+            room_split.read_manifest(str(path))
+
+    def test_malformed_json_is_refused(self, tmp_path):
+        path = tmp_path / "m.json"
+        path.write_text("not json")
+        with pytest.raises(room_split.ManifestInvalid):
+            room_split.read_manifest(str(path))
+
 
 class TestReadFromAnUnreadablePalace:
     def test_a_missing_palace_raises_rather_than_reporting_nothing(self, tmp_path):
@@ -149,7 +236,18 @@ class TestApplyGuards:
         ]) == 2
 
     def test_revert_needs_a_manifest(self, tmp_path, capsys):
-        assert room_split.main(["--palace", str(tmp_path), "--revert"]) == 2
+        assert room_split.main([
+            "--palace", str(tmp_path), "--revert", "--i-have-a-verified-backup",
+        ]) == 2
+
+    def test_revert_also_refuses_without_the_backup_flag(self, tmp_path, capsys):
+        """--revert writes too. Documenting --apply as the only writing path and
+        then letting --revert through would be the contract failing."""
+        rc = room_split.main([
+            "--palace", str(tmp_path), "--revert", "--manifest", str(tmp_path / "m.json"),
+        ])
+        assert rc == 2
+        assert "verified-backup" in capsys.readouterr().out
 
 
 @pytest.fixture
@@ -220,6 +318,30 @@ class TestApplyAndRevertOnARealPalace:
 
         after = collection.get(include=["metadatas"])["metadatas"]
         assert {frozenset(m.keys()) for m in after} == keys_before
+
+    def test_a_missing_id_refuses_and_writes_nothing(self, seeded_palace):
+        """Silently skipping a missing id and exiting 0 would leave a partly
+        migrated palace that automation reads as a clean run."""
+        from mempalace.palace import get_collection
+
+        moves = room_split.read_documentation_drawers(str(seeded_palace))
+        moves.append({
+            "id": "does-not-exist", "wing": "testwing",
+            "source_file": "/tmp/mempalace-restage/testproj/docs/plans/ghost.md",
+            "from_room": "documentation", "to_room": "plans",
+        })
+        with pytest.raises(room_split.MoveIncomplete):
+            room_split.apply_moves(str(seeded_palace), moves)
+
+        collection = get_collection(str(seeded_palace), create=False)
+        rooms = {m["room"] for m in collection.get(include=["metadatas"])["metadatas"]}
+        assert rooms == {"documentation"}, "a refused move must write nothing at all"
+
+    def test_duplicate_ids_are_refused(self, seeded_palace):
+        moves = room_split.read_documentation_drawers(str(seeded_palace))
+        movers = [m for m in moves if m["to_room"] != m["from_room"]]
+        with pytest.raises(room_split.MoveIncomplete):
+            room_split.apply_moves(str(seeded_palace), movers + [movers[0]])
 
     def test_no_drawer_is_lost(self, seeded_palace):
         from mempalace.palace import get_collection

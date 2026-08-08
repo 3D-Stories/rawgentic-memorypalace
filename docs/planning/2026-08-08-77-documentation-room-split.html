@@ -254,7 +254,7 @@ padding:3px 10px;cursor:pointer}
 <body class="tpl-analysis">
 <div class="wrap">
 <header>
-<div class="eyebrow">design artifact · updated 2026-08-07 22:58 MDT</div>
+<div class="eyebrow">design artifact · updated 2026-08-07 23:10 MDT</div>
 <h1>#77 Unwinding the documentation room</h1>
 
 </header>
@@ -296,29 +296,31 @@ padding:3px 10px;cursor:pointer}
 <tr><td><code>docs/archive/**</code></td><td><code>archive</code></td><td>5,251</td></tr>
 <tr><td><code>docs/plans</code>, <code>docs/planning</code>, <code>docs/roadmap</code></td><td><code>plans</code></td><td>3,877</td></tr>
 <tr><td><code>docs/superpowers/**</code>, <code>docs/specs</code></td><td><code>specs</code></td><td>1,954</td></tr>
-<tr><td><code>docs/reference</code>, <code>docs/domain</code>, <code>docs/quickstart</code></td><td><code>reference</code></td><td>1,148</td></tr>
-<tr><td><code>docs/runbooks</code>, <code>docs/operations</code>, <code>docs/monitoring</code>, <code>docs/deploy</code>, <code>docs/hardware</code></td><td><code>operations</code></td><td>875</td></tr>
-<tr><td><code>docs/design</code>, <code>docs/architecture</code>, <code>docs/ux-review</code></td><td><code>design</code></td><td>861</td></tr>
+<tr><td><code>docs/reference</code>, <code>docs/domain</code>, <code>docs/quickstart</code></td><td><code>reference</code></td><td>1,130</td></tr>
+<tr><td><code>docs/runbooks</code>, <code>docs/operations</code>, <code>docs/monitoring</code>, <code>docs/deploy</code>, <code>docs/hardware</code></td><td><code>operations</code></td><td>857</td></tr>
 <tr><td><code>docs/product</code></td><td><code>product</code></td><td>852</td></tr>
+<tr><td><code>docs/design</code>, <code>docs/architecture</code>, <code>docs/ux-review</code></td><td><code>design</code></td><td>787</td></tr>
 <tr><td><code>docs/features</code></td><td><code>features</code></td><td>723</td></tr>
-<tr><td><code>docs/migration</code></td><td><code>migration</code></td><td>576</td></tr>
-<tr><td><code>docs/TDD</code>, <code>docs/testing</code></td><td><code>testing</code></td><td>285</td></tr>
+<tr><td><code>docs/migration</code></td><td><code>migration</code></td><td>539</td></tr>
+<tr><td><code>docs/TDD</code>, <code>docs/testing</code></td><td><code>testing</code></td><td>278</td></tr>
 <tr><td><code>docs/sessions</code></td><td><code>sessions</code></td><td>271</td></tr>
 <tr><td><code>docs/analysis</code></td><td><code>analysis</code></td><td>265</td></tr>
 <tr><td><code>docs/SDLC</code></td><td><code>process</code></td><td>211</td></tr>
-<tr><td>anything unmapped</td><td>stays <code>documentation</code></td><td>1,582</td></tr>
+<tr><td>anything unmapped</td><td>stays <code>documentation</code></td><td>1,736</td></tr>
 </tbody>
 </table>
-<p><strong>Dry run against the live palace: 17,149 of 18,731 drawers (91.5%) get a meaningful room. 1,582 stay put.</strong> Nothing is forced: an unrecognized source path keeps the residue room rather than being guessed into a wrong one.</p>
+<p><strong>Dry run against the live palace: 16,995 of 18,731 drawers (90.7%) get a meaningful room. 1,736 stay put.</strong> Nothing is forced: an unrecognized source path keeps the residue room rather than being guessed into a wrong one.</p>
+<p>Matching is on <strong>path components</strong>, not raw prefixes — a review pass found that a raw prefix swept <code>docs/archived</code>, <code>docs/plans-old</code> and <code>docs/productivity</code> into rooms they do not belong to. Fixing it moved 154 drawers back to the residue room, which is why the numbers here are slightly lower than a naive match would report.</p>
 <p>What that does to the biggest wings:</p>
 <div class="doc-code"><div class="doc-code-bar"><span class="doc-code-lang">code</span><button class="doc-code-copy" type="button" hidden>Copy</button></div><pre><code>chorestory (10,018)  archive 5159 · reference 1130 · product 852 · features 723 ·
-                     documentation 443 · design 394 · testing 278 · sessions 271 ·
-                     analysis 265 · process 211 · specs 184 · plans 71 · migration 37
-millions   (2,704)   plans 2497 · documentation 148 · design 41 · reference 18
+                     documentation 513 · design 361 · testing 278 · sessions 271 ·
+                     analysis 265 · process 211 · specs 184 · plans 71
+millions   (2,704)   plans 2497 · documentation 207
 sysop      (1,690)   operations 857 · migration 533 · specs 134 · archive 92 · documentation 74
 grocusave  (1,554)   specs 858 · plans 520 · documentation 176
-rawgentic  (1,309)   plans 559 · design 426 · documentation 271 · specs 46 · testing 7</code></pre></div>
-<p><code>chorestory</code> goes from one room to thirteen. That is the room dimension coming back to life.</p>
+rawgentic  (1,309)   plans 559 · design 426 · documentation 278 · specs 46</code></pre></div>
+<p><code>chorestory</code> goes from one room to twelve. That is the room dimension coming back to life.</p>
+<p>Three wings gain nothing: <code>arc</code> (101), <code>snowgate</code> (19) and <code>nillerkgames</code> (4) stay entirely in the residue room, because their source folders are not ones the rules recognize. That is reported rather than forced — guessing a room for them would be inventing a taxonomy instead of reading one.</p>
 <p><strong>The naming rule, written down:</strong> a room is a KIND of content, never a project. The project is the wing. A room name is a lowercase singular-or-plural noun naming what the content <em>is</em> (<code>plans</code>, <code>specs</code>, <code>archive</code>), never who it belongs to.</p>
 <hr></section>
 <section class="an-q" id="s3"><h3>AC3 — the rule that stops it rebuilding <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">From #74: <strong>nothing writes to <code>documentation</code> today.</strong> 18,729 of its 18,731 drawers came from a single bulk <code>mempalace mine</code> run in April 2026, and exactly two have been added since. There is no live tap to close. So the rule has to bind the NEXT bulk mine rather than an ongoing process:</p>
@@ -336,21 +338,30 @@ python -m rawgentic_memory.room_split --json
 python -m rawgentic_memory.room_split --apply \
     --manifest revert-2026-08-08.json --i-have-a-verified-backup
 python -m rawgentic_memory.room_split --revert --manifest revert-2026-08-08.json</code></pre></div>
-<p>Four properties, each one a refusal rather than a hope:</p>
+<p>Six properties, each one a refusal rather than a hope:</p>
 <ul>
-<li><strong>Dry run is the default.</strong> <code>--apply</code> is the only path that writes.</li>
-<li><strong><code>--apply</code> refuses without <code>--i-have-a-verified-backup</code>.</strong> The palace is 308 MB and a backup</li>
+<li><strong>Dry run is the default.</strong></li>
+<li>**<code>--apply</code> AND <code>--revert</code> both write, and both refuse without</li>
 </ul>
-<p>  nobody has restored is not a backup.</p>
+<p>  <code>--i-have-a-verified-backup</code>.** An earlier draft said &quot;<code>--apply</code> is the only path that   writes&quot; and then let <code>--revert</code> through without the flag; a review pass caught the   contradiction. The palace is 308 MB and a backup nobody has restored is not a backup.</p>
 <ul>
 <li><strong><code>--apply</code> refuses without <code>--manifest</code>,</strong> and the manifest is written BEFORE anything</li>
 </ul>
 <p>  changes. It records every drawer id with its old and new room, so <code>--revert</code> puts each one   back exactly.</p>
 <ul>
-<li><strong>A manifest is never overwritten.</strong> Overwriting one would strand the drawers it describes.</li>
+<li><strong>A manifest is never overwritten,</strong> and it is created with exclusive mode rather than a</li>
 </ul>
+<p>  check-then-write, which had a window where another process could create the file and have it   truncated.</p>
+<ul>
+<li><strong>A corrupt manifest is refused.</strong> It carries a version and a move count, and a mismatch</li>
+</ul>
+<p>  raises. An empty-but-valid <code>{}</code> would otherwise revert nothing and report success — a   recovery command claiming it worked while the palace stays migrated.</p>
+<ul>
+<li><strong>A partial write is refused, not reported.</strong> Every id is checked before anything is written,</li>
+</ul>
+<p>  and a missing or duplicated id raises with nothing changed. A half-migrated palace that   automation reads as clean is the worst outcome available here.</p>
 <p>Both write paths are tested against a real ephemeral palace, not a mock: apply moves the drawers, revert restores them, every other metadata key survives, and the drawer count is unchanged. A migration tool whose write path has never run is a claim, not a capability.</p>
-<div class="blk blk-steps an-figure"><ol><li class="blk-step"><span class="blk-n">1</span><span class="blk-title">Back up the palace AND restore it once</span><span class="blk-text">308 MB at ~/.mempalace/palace. <code>sqlite_integrity</code> currently reports error_count 0 — that clean baseline is what the restore has to reproduce.</span></li><li class="blk-step"><span class="blk-n">2</span><span class="blk-title">Run the dry run and read the per-wing table</span><span class="blk-text">It is the diff. If a wing looks wrong, fix the rules before touching anything.</span></li><li class="blk-step"><span class="blk-n">3</span><span class="blk-title">Apply with a dated manifest</span><span class="blk-text"><code>--apply --manifest revert-&lt;date&gt;.json --i-have-a-verified-backup</code>.</span></li><li class="blk-step"><span class="blk-n">4</span><span class="blk-title">Re-run the AFTER measurement on the fixed query set</span><span class="blk-text">docs/reviews/2026-08-08-77-retrieval-query-set.json, unchanged. A query set edited between runs measures nothing.</span></li><li class="blk-step"><span class="blk-n">5</span><span class="blk-title">Compare, and revert if it got worse</span><span class="blk-text"><code>--revert --manifest revert-&lt;date&gt;.json</code>. The number decides, not the feeling.</span></li></ol></div>
+<div class="blk blk-steps an-figure"><ol><li class="blk-step"><span class="blk-n">1</span><span class="blk-title">Back up the palace AND restore it once</span><span class="blk-text">308 MB at ~/.mempalace/palace. <code>sqlite_integrity</code> currently reports error_count 0 — that clean baseline is what the restore has to reproduce.</span></li><li class="blk-step"><span class="blk-n">2</span><span class="blk-title">Run the dry run and read the per-wing table</span><span class="blk-text">It is the diff. If a wing looks wrong, fix the rules before touching anything.</span></li><li class="blk-step"><span class="blk-n">3</span><span class="blk-title">Apply with a dated manifest</span><span class="blk-text"><code>--apply --manifest revert-&lt;date&gt;.json --i-have-a-verified-backup</code>.</span></li><li class="blk-step"><span class="blk-n">4</span><span class="blk-title">Re-run the AFTER measurement on the fixed query set</span><span class="blk-text">docs/reviews/2026-08-08-77-retrieval-query-set.json, unchanged. A query set edited between runs measures nothing.</span></li><li class="blk-step"><span class="blk-n">5</span><span class="blk-title">Compare, and revert if it got worse</span><span class="blk-text"><code>--revert --manifest revert-&lt;date&gt;.json --i-have-a-verified-backup</code>. The number decides, not the feeling.</span></li></ol></div>
 <hr></section>
 <section class="an-q" id="s5"><h3>AC5 — the before measurement, recorded <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">Twenty queries, top 10 each, fixed in <code>docs/reviews/2026-08-08-77-retrieval-query-set.json</code> so the after-run uses exactly the same set.</p>
 <p><strong>BEFORE (2026-08-08): 147 of 200 hits — 73.5% — came from <code>documentation</code>.</strong></p>
@@ -385,7 +396,7 @@ python -m rawgentic_memory.room_split --revert --manifest revert-2026-08-08.json
 <div class="blk blk-provenance"><dl><dt>source</dt><dd>docs/planning/2026-08-08-77-documentation-room-split.md</dd><dt>issue</dt><dd>#77</dd><dt>acts on</dt><dd>#74</dd><dt>epic</dt><dd>#71</dd><dt>measured</dt><dd>2026-08-08</dd><dt>state</dt><dd>plan + tool + before-measurement; move NOT executed</dd></dl></div></section>
 
 </main>
-<footer>Last updated: 2026-08-07 22:58 MDT · generated by design-doc-publish — self-contained, no external resources.</footer>
+<footer>Last updated: 2026-08-07 23:10 MDT · generated by design-doc-publish — self-contained, no external resources.</footer>
 </div>
 <script>
 (function(){

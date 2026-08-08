@@ -193,7 +193,7 @@ python -m rawgentic_memory.palace_lint
 python -m rawgentic_memory.palace_lint --json --max-items 50
 ```
 
-Test suite — 347 tests, from `.venv/bin/pytest tests/ -q` on 2026-08-08. Re-run
+Test suite — 365 tests, from `.venv/bin/pytest tests/ -q` on 2026-08-08. Re-run
 that command rather than trusting this number; it is the kind that rots:
 - `tests/test_adapter.py` — 35 tests for the versioned adapter (CONTRACT_VERSION=3, tunnel context, dynamic contract)
 - `tests/test_server_slim.py` — 16 tests for the 7 HTTP endpoints + 410 Gone handlers
@@ -208,7 +208,7 @@ that command rather than trusting this number; it is the kind that rots:
 - `tests/test_kg_health.py` — 28 tests for the knowledge-graph drift detector (declared predicates, read-only guarantee, exit codes)
 - `tests/test_palace_lint.py` — 41 tests for the palace linter (fragmentation exactness, skew, truncation reporting, status validation, exit codes)
 - `tests/test_benchmark_claims.py` — 5 tests pinning the `R@5` label on every mention of the 96.6% figure
-- `tests/test_room_split.py` — 34 tests for the documentation-room split (classification, apply guards, and apply/revert against a real ephemeral palace)
+- `tests/test_room_split.py` — 52 tests for the documentation-room split (classification, apply guards, and apply/revert against a real ephemeral palace)
 - `tests/integration/` — graceful degradation, hook timeouts, version boundaries, acceptance criteria
 - `tests/canary.py` — standalone continuous-health canary script
 
@@ -333,7 +333,7 @@ The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason
 
 ### v0.11.0 (2026-08-08)
 
-- **Documentation-room split — plan, tool and before-measurement (rawgentic#77).** `python -m rawgentic_memory.room_split` re-sorts the 18,731-drawer `documentation` room by the KIND of content, using the source-folder taxonomy already in the data. **Dry run is the default; the move has NOT been run against the live palace.** `--apply` refuses without both `--i-have-a-verified-backup` and `--manifest`, writes the reversal manifest before changing anything, and never overwrites an existing manifest; `--revert` puts every drawer back. Nothing deletes a drawer — the only mutation is the `room` value, and both write paths are tested against a real ephemeral palace. **The issue proposed per-project rooms; the measurement argued against it** — for 11 of 14 wings `documentation` is 95-100% of the whole wing (`millions` is 2,704 of 2,705), so a per-project room would restate the wing, which already scopes the project. The wing keeps the project and the room carries the kind (owner decision 2026-08-08). Dry run: 17,149 of 18,731 (91.5%) get a meaningful room, `chorestory` alone going from one room to thirteen. Before-measurement recorded: 147 of 200 hits (73.5%) on a fixed 20-query set come from `documentation`. Plan: [`docs/planning/2026-08-08-77-documentation-room-split.md`](docs/planning/2026-08-08-77-documentation-room-split.md).
+- **Documentation-room split — plan, tool and before-measurement (rawgentic#77).** `python -m rawgentic_memory.room_split` re-sorts the 18,731-drawer `documentation` room by the KIND of content, using the source-folder taxonomy already in the data. **Dry run is the default; the move has NOT been run against the live palace.** **Both `--apply` and `--revert` write, and both require `--manifest` and `--i-have-a-verified-backup`.** The reversal manifest is written before anything changes, created with exclusive mode, carries a version and a move count, and a corrupt one is refused rather than reverting nothing and reporting success. A missing or duplicated drawer id refuses with nothing written — a half-migrated palace that automation reads as clean is the worst outcome available. Nothing deletes a drawer; the only mutation is the `room` value, and both write paths are tested against a real ephemeral palace. **The issue proposed per-project rooms; the measurement argued against it** — for 11 of 14 wings `documentation` is 95-100% of the whole wing (`millions` is 2,704 of 2,705), so a per-project room would restate the wing, which already scopes the project. The wing keeps the project and the room carries the kind (owner decision 2026-08-08). Dry run: 16,995 of 18,731 (90.7%) get a meaningful room, `chorestory` alone going from one room to twelve. Before-measurement recorded: 147 of 200 hits (73.5%) on a fixed 20-query set come from `documentation`. Plan: [`docs/planning/2026-08-08-77-documentation-room-split.md`](docs/planning/2026-08-08-77-documentation-room-split.md).
 
 ### v0.10.0 (2026-08-08)
 

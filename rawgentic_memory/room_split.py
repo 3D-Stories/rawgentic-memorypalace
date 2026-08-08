@@ -24,11 +24,21 @@ Usage::
     python -m rawgentic_memory.room_split --json
     python -m rawgentic_memory.room_split --apply --manifest revert.json \\
         --i-have-a-verified-backup
-    python -m rawgentic_memory.room_split --revert --manifest revert.json
+    python -m rawgentic_memory.room_split --revert --manifest revert.json \\
+        --i-have-a-verified-backup
+
+**Both `--apply` and `--revert` write to the palace, and both require
+`--manifest` and `--i-have-a-verified-backup`.** Revert is the recovery path, but
+it is still a write.
 
 **Nothing here deletes a drawer.** The only mutation is a drawer's `room`
 metadata value, and `--apply` writes the reversal manifest BEFORE it changes
 anything, so every move can be undone by `--revert` with that file.
+
+**A partial write is refused, not reported as success.** Every drawer id is
+checked before anything is written, and a mismatch between what was asked for and
+what was changed raises rather than exiting 0 — a half-migrated palace that
+automation reads as clean is the worst outcome available here.
 """
 from __future__ import annotations
 
@@ -46,9 +56,8 @@ RESIDUE_ROOM = "documentation"
 # though `docs/a...` would also match a later, broader rule. Matching is on the
 # path AFTER the project directory, lowercased.
 ROOM_RULES: tuple[tuple[str, str], ...] = (
-    ("docs/archive/", "archive"),
     ("docs/archive", "archive"),
-    ("docs/superpowers/", "specs"),
+    ("docs/superpowers", "specs"),
     ("docs/specs", "specs"),
     ("docs/plans", "plans"),
     ("docs/planning", "plans"),
@@ -85,28 +94,38 @@ class PalaceUnreadable(Exception):
 
 
 def project_relative(source_file: str) -> str:
-    """The path below the project directory, lowercased.
+    """The path from the project's `docs` directory down, lowercased.
 
-    Source paths look like `/tmp/mempalace-restage/<project>/docs/plans/x.md` —
-    a staging directory from the April 2026 bulk mine that no longer exists. Only
-    the part below `<project>` carries the kind.
+    The April 2026 bulk mine wrote paths like
+    `/tmp/mempalace-restage/<project>/docs/plans/x.md`, from a staging directory
+    that no longer exists. Anchoring on that prefix alone would classify only
+    that one historical shape, so the NEXT bulk mine — from an ordinary path like
+    `/repo/docs/plans/x.md` — would fall through to the residue room and rebuild
+    the catch-all this tool exists to prevent.
+
+    So the anchor is the first path COMPONENT named `docs`, whatever sits above
+    it. A path with no such component returns lowercased and unanchored, which
+    matches no rule and therefore keeps the residue room — the safe direction.
     """
     if not source_file:
         return ""
-    parts = source_file.replace("\\", "/").split("/")
-    if "mempalace-restage" in parts:
-        idx = parts.index("mempalace-restage")
-        parts = parts[idx + 2:]  # drop the marker AND the project directory
-    elif parts and parts[0] == "":
-        parts = parts[1:]
-    return "/".join(parts).lower()
+    parts = [p for p in source_file.replace("\\", "/").lower().split("/") if p]
+    if "docs" in parts:
+        parts = parts[parts.index("docs"):]
+    return "/".join(parts)
 
 
 def classify(source_file: str) -> str:
-    """The room a drawer belongs in. Unrecognized paths keep the residue room."""
+    """The room a drawer belongs in. Unrecognized paths keep the residue room.
+
+    Matching is on COMPONENT boundaries, never a raw prefix. A raw prefix would
+    pull `docs/archived`, `docs/plans-old` and `docs/productivity` into rooms
+    they do not belong to, which would break the promise that an unrecognized
+    path stays put.
+    """
     relative = project_relative(source_file)
     for prefix, room in ROOM_RULES:
-        if relative.startswith(prefix):
+        if relative == prefix or relative.startswith(prefix + "/"):
             return room
     return RESIDUE_ROOM
 
@@ -195,41 +214,123 @@ def summarize(moves: list[dict]) -> dict:
     }
 
 
+MANIFEST_VERSION = 1
+
+
+class ManifestInvalid(Exception):
+    """The manifest is missing, malformed, or does not describe what it claims."""
+
+
+class MoveIncomplete(Exception):
+    """Some drawers could not be moved. The palace is now partly migrated."""
+
+
 def write_manifest(path: str, moves: list[dict]) -> int:
-    """Record every move so `--revert` can put each drawer back. Never overwrites."""
-    if os.path.exists(path):
+    """Record every move so `--revert` can put each drawer back.
+
+    Created with exclusive mode. Checking `os.path.exists` and then opening for
+    write leaves a window in which another process can create the file and have
+    it truncated here — which is exactly the "a manifest is never overwritten"
+    promise failing quietly.
+    """
+    real = [
+        {"id": m["id"], "from_room": m["from_room"], "to_room": m["to_room"]}
+        for m in moves
+        if m["to_room"] != m["from_room"] and m["id"]
+    ]
+    payload = {
+        "manifest_version": MANIFEST_VERSION,
+        "source_room": SOURCE_ROOM,
+        "move_count": len(real),
+        "moves": real,
+    }
+    try:
+        handle = open(path, "x", encoding="utf-8")
+    except FileExistsError as exc:
         raise FileExistsError(
             f"{path} exists. A manifest is a one-time record of one apply; "
             "overwriting it would strand the drawers it describes."
-        )
-    payload = {
-        "source_room": SOURCE_ROOM,
-        "moves": [
-            {"id": m["id"], "from_room": m["from_room"], "to_room": m["to_room"]}
-            for m in moves
-            if m["to_room"] != m["from_room"] and m["id"]
-        ],
-    }
-    with open(path, "w", encoding="utf-8") as handle:
+        ) from exc
+    with handle:
         json.dump(payload, handle, indent=2)
-    return len(payload["moves"])
+        handle.flush()
+        os.fsync(handle.fileno())
+    return len(real)
+
+
+def read_manifest(path: str) -> dict:
+    """Load a manifest and refuse anything that does not describe a real apply.
+
+    An empty-but-valid JSON object would otherwise revert nothing and report
+    success — a recovery command that says it worked while the palace stays
+    migrated is worse than one that fails.
+    """
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ManifestInvalid(f"{path}: {exc}") from exc
+
+    if not isinstance(payload, dict):
+        raise ManifestInvalid(f"{path}: top level is not an object")
+    if payload.get("manifest_version") != MANIFEST_VERSION:
+        raise ManifestInvalid(
+            f"{path}: manifest_version is {payload.get('manifest_version')!r}, "
+            f"expected {MANIFEST_VERSION}"
+        )
+    if payload.get("source_room") != SOURCE_ROOM:
+        raise ManifestInvalid(f"{path}: source_room is {payload.get('source_room')!r}")
+    moves = payload.get("moves")
+    if not isinstance(moves, list):
+        raise ManifestInvalid(f"{path}: 'moves' is missing or not a list")
+    if payload.get("move_count") != len(moves):
+        raise ManifestInvalid(
+            f"{path}: move_count {payload.get('move_count')!r} does not match "
+            f"{len(moves)} recorded moves"
+        )
+    for move in moves:
+        if not isinstance(move, dict) or not move.get("id") or not move.get("from_room"):
+            raise ManifestInvalid(f"{path}: a move row is missing 'id' or 'from_room'")
+    return payload
 
 
 def _set_rooms(palace_path: str, pairs: list[tuple[str, str]]) -> int:
-    """Set `room` on each (drawer id, room). Preserves every other metadata key."""
+    """Set `room` on each (drawer id, room). Preserves every other metadata key.
+
+    Every id is checked BEFORE anything is written. Skipping a missing id and
+    exiting 0 would leave a partly migrated palace that automation reads as a
+    clean run.
+    """
     from mempalace.palace import get_collection
 
     collection = get_collection(palace_path, create=False)
+
+    ids = [drawer for drawer, _ in pairs]
+    duplicates = {i for i in ids if ids.count(i) > 1}
+    if duplicates:
+        raise MoveIncomplete(f"duplicate drawer ids requested: {sorted(duplicates)[:10]}")
+
+    existing = {}
+    for drawer in ids:
+        found = collection.get(ids=[drawer], include=["metadatas"])
+        metadatas = found.get("metadatas") or []
+        if metadatas:
+            existing[drawer] = dict(metadatas[0])
+    missing = [drawer for drawer in ids if drawer not in existing]
+    if missing:
+        raise MoveIncomplete(
+            f"{len(missing)} of {len(ids)} drawers are not in the palace; "
+            f"nothing was written. First few: {missing[:5]}"
+        )
+
     changed = 0
     for drawer, room in pairs:
-        existing = collection.get(ids=[drawer], include=["metadatas"])
-        metadatas = existing.get("metadatas") or []
-        if not metadatas:
-            continue
-        updated = dict(metadatas[0])
+        updated = existing[drawer]
         updated["room"] = room
         collection.update(ids=[drawer], metadatas=[updated])
         changed += 1
+    if changed != len(pairs):
+        raise MoveIncomplete(f"wrote {changed} of {len(pairs)} drawers")
     return changed
 
 
@@ -241,11 +342,15 @@ def apply_moves(palace_path: str, moves: list[dict]) -> int:
 
 
 def revert_manifest(palace_path: str, manifest_path: str) -> int:
-    with open(manifest_path, encoding="utf-8") as handle:
-        payload = json.load(handle)
-    return _set_rooms(
-        palace_path, [(m["id"], m["from_room"]) for m in payload.get("moves", [])]
+    payload = read_manifest(manifest_path)
+    restored = _set_rooms(
+        palace_path, [(m["id"], m["from_room"]) for m in payload["moves"]]
     )
+    if restored != payload["move_count"]:
+        raise MoveIncomplete(
+            f"restored {restored} of {payload['move_count']} recorded moves"
+        )
+    return restored
 
 
 def render(summary: dict) -> str:
@@ -291,11 +396,13 @@ def main(argv: list[str] | None = None) -> int:
     # Argument guards run BEFORE the palace is touched. Checking them after the
     # read would tell someone who forgot the backup flag only once the work was
     # done, and on an unreadable palace it would report the wrong problem.
-    if args.apply and not args.i_have_a_verified_backup:
+    # --revert writes too. Saying "--apply is the only writing path" and then
+    # letting --revert mutate without the backup flag is the contract failing.
+    if (args.apply or args.revert) and not args.i_have_a_verified_backup:
         print(
-            "refusing to apply: pass --i-have-a-verified-backup. "
-            "This moves thousands of drawers in a 308 MB palace, and a backup "
-            "nobody has restored is not a backup."
+            "refusing to write: pass --i-have-a-verified-backup. Both --apply and "
+            "--revert change the palace, which is 308 MB, and a backup nobody has "
+            "restored is not a backup."
         )
         return 2
     if args.apply and not args.manifest:
@@ -322,7 +429,8 @@ def main(argv: list[str] | None = None) -> int:
 
         print(json.dumps(summary, indent=2) if args.json else render(summary))
         return 0
-    except (PalaceUnreadable, FileExistsError, OSError, ValueError) as exc:
+    except (PalaceUnreadable, ManifestInvalid, MoveIncomplete,
+            FileExistsError, OSError, ValueError) as exc:
         print(f"could not complete: {exc}")
         return 2
 
