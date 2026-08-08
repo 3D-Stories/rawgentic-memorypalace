@@ -168,7 +168,16 @@ python -m rawgentic_memory.kg_health          # 0 nothing wrong, 1 drift or dupl
 python -m rawgentic_memory.kg_health --json
 ```
 
-Test suite — 267 tests, from `.venv/bin/pytest tests/ -q` on 2026-08-08. Re-run
+Palace linter — reports room/wing skew, wing-name fragmentation, knowledge-graph
+coverage and near-empty wings. Exits non-zero only on a hard problem
+(fragmentation, or a SQLite integrity error), never on skew:
+
+```bash
+python -m rawgentic_memory.palace_lint
+python -m rawgentic_memory.palace_lint --json --max-items 50
+```
+
+Test suite — 308 tests, from `.venv/bin/pytest tests/ -q` on 2026-08-08. Re-run
 that command rather than trusting this number; it is the kind that rots:
 - `tests/test_adapter.py` — 35 tests for the versioned adapter (CONTRACT_VERSION=3, tunnel context, dynamic contract)
 - `tests/test_server_slim.py` — 16 tests for the 7 HTTP endpoints + 410 Gone handlers
@@ -181,6 +190,7 @@ that command rather than trusting this number; it is the kind that rots:
 - `tests/test_frontend_compose.py` — 16 tests for frontend Docker Compose config
 - `tests/test_frontend_decision.py` — 12 tests for frontend deployment decisions
 - `tests/test_kg_health.py` — 28 tests for the knowledge-graph drift detector (declared predicates, read-only guarantee, exit codes)
+- `tests/test_palace_lint.py` — 41 tests for the palace linter (fragmentation exactness, skew, truncation reporting, status validation, exit codes)
 - `tests/integration/` — graceful degradation, hook timeouts, version boundaries, acceptance criteria
 - `tests/canary.py` — standalone continuous-health canary script
 
@@ -302,6 +312,10 @@ That's working as intended — the wrapper's Stop hook injects a `systemMessage`
 The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason`) — NOT `hookSpecificOutput`. If you see this error, your wrapper is outdated. Update it by copying from the plugin: `cp <plugin-path>/hooks/mempalace-hook-wrapper.sh ~/.local/bin/`.
 
 ## Changelog
+
+### v0.9.0 (2026-08-08)
+
+- **Palace linter (rawgentic#73).** `python -m rawgentic_memory.palace_lint [--json] [--max-items N]` reports room skew, wing skew, wing-name fragmentation, knowledge-graph coverage and near-empty wings. It **reports shape and enforces almost nothing** — skew is a judgment call, and a linter that failed the build over it would just be switched off. Two conditions are hard enough to exit non-zero: wing-name fragmentation, and a SQLite integrity error as reported by upstream. Fragmentation detection is exact equality after normalization (strip a leading `wing_`, hyphen to underscore, lowercase), never a similarity score — which is what keeps `rawgentic` and `rawgentic-next` apart while still merging `herdr-dashboard` with `herdr_dashboard`. Integrity and totals are consumed from upstream's public `tool_status()` rather than reimplemented, and knowledge-graph coverage reuses the #72 checker. Every cap reports what it withheld. **First live run: 22,110 drawers, 51 wings, 66 rooms — `documentation` 84.7%, `chorestory` 46.1%, knowledge-graph coverage 0.7%, and 3 fragmented wing names, so it exits 1 on the palace as it stands today.** Fixing what it finds is deliberately out of scope: the `documentation` room is #74/#77, and a wing rename moves other sessions' memories.
 
 ### v0.8.0 (2026-08-08)
 
