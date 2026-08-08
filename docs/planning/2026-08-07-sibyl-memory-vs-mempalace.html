@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="design-doc-publish">
-<title>Sibyl-Memory against our MemPalace: should we switch?</title>
+<title>Sibyl-Memory vs MemPalace</title>
 <style>
 :root{--bg:#12181c;--surface:#1a2228;--ink:#e7edf0;--ink-2:#a8b6bd;--ink-3:#76858f;
 --line:#2a353c;--accent:#2dd4bf;--code:#232d34}
@@ -233,11 +233,12 @@ color:var(--ink)}
 <body class="tpl-analysis">
 <div class="wrap">
 <header>
-<div class="eyebrow">design artifact · updated 2026-08-07 19:21 MDT</div>
-<h1>Sibyl-Memory against our MemPalace: should we switch?</h1>
+<div class="eyebrow">design artifact · updated 2026-08-07 22:47 MDT</div>
+<h1>Sibyl-Memory vs MemPalace</h1>
 
 </header>
 <main>
+<h1>Sibyl-Memory against our MemPalace: should we switch?</h1>
 <p><strong>No. Stay on MemPalace, and do not pilot Sibyl-Memory as a replacement.</strong> Sibyl&#x27;s free tier hard-caps a local database at 2 MB. Our palace is 308 MB across 22,092 drawers, so we are roughly 154x over that line before a single new memory is written. Switching is not a migration, it is a purchase — and the product it buys is at version 0.1.2, has 98 GitHub stars, ships 305 downloads a month, and its documentation site currently returns &quot;Documentation is being rebuilt.&quot;</p>
 <p>Two of Sibyl&#x27;s design choices are nonetheless better than ours and worth stealing. Its single-source-of-truth rule is enforced by a database constraint rather than by convention, and its published reproducibility kit sets a standard our own benchmark claim does not meet.</p>
 <div class="blk blk-verdict"><div class="blk-row is-ship"><span class="blk-key">ship</span><span class="blk-text">Stay on MemPalace. The scale gap alone settles it; the maturity gap confirms it.</span></div><div class="blk-row is-risk"><span class="blk-key">risk</span><span class="blk-text">Our palace is unhealthy in a way this comparison exposed: 85% of it is one room.</span></div><div class="blk-row is-risk"><span class="blk-key">risk</span><span class="blk-text">Our headline benchmark number is not comparable to Sibyl&#x27;s, and both get quoted.</span></div></div>
@@ -277,7 +278,7 @@ whether the answer appeared in the top five retrieved items. Sibyl publishes <st
 on LongMemEval Oracle, end to end, with Claude Opus 4.6 doing the answering. One measures a
 retriever. The other measures a retriever plus a frontier model plus a prompt.</p></div></div>
 <p>Reading those two numbers side by side and concluding MemPalace wins by a point is unsupported. So is the reverse. <strong>We have no head-to-head evidence, and this document does not manufacture one.</strong></p>
-<p>Credit where it is due. Sibyl publishes <code>memory-bench-kit</code> with the scorer, the raw hypothesis files, the run ID, the model, the cost (<code>$43.78</code>, <code>$0.088/question</code>) and the wall clock. That is a materially higher standard of evidence than a percentage in a README, and it is the standard our own 96.6% figure does not meet.</p></section>
+<p>Credit where it is due. Sibyl publishes <code>memory-bench-kit</code> with the scorer, the raw hypothesis files, the run ID, the model, the cost (<code>$43.78</code>, <code>$0.088/question</code>) and the wall clock. That is a materially higher standard of evidence than a percentage in a README, and it is the standard our own 96.6% <code>R@5</code> figure does not meet.</p></section>
 <section class="an-q" id="s4"><h3>Where Sibyl is genuinely better <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">Three things. The first is the one worth acting on.</p>
 <div class="blk blk-steps an-figure"><ol><li class="blk-step"><span class="blk-n">1</span><span class="blk-title">Schema-enforced single source of truth</span><span class="blk-text">Sibyl&#x27;s Rule 43 is a <code>UNIQUE (tenant_id, category, name)</code> constraint. Ours is convention.</span></li><li class="blk-step"><span class="blk-n">2</span><span class="blk-title">No embedding dependency</span><span class="blk-text">No 300 MB model, no GPU question, no re-embedding cost when the model changes.</span></li><li class="blk-step"><span class="blk-n">3</span><span class="blk-title">A memory linter</span><span class="blk-text">A health check over the local database. We have no equivalent, and the next section shows why we need one.</span></li></ol></div>
 <p>The constraint is the interesting one. We rely on a protocol — the instruction to call <code>mempalace_kg_supersede</code> rather than hand-rolling invalidate-then-add — to prevent duplicate facts. Sibyl makes that class of drift impossible at the schema level. A rule a model must remember is weaker than a rule the database enforces, and we have 22,092 drawers written under the weaker one.</p></section>
@@ -314,9 +315,9 @@ in the palace rather than by the engine underneath it.</p></div></div></section>
 </ol>
 <p>   surface, and we found it by accident while researching a competitor.</p>
 <ol start="3">
-<li><strong>Stop quoting 96.6% beside anyone else&#x27;s accuracy figure.</strong> It is a recall number. Either say</li>
+<li><strong>Stop quoting 96.6% beside anyone else&#x27;s accuracy figure.</strong> It is <code>R@5</code> — retrieval recall</li>
 </ol>
-<p>   so every time, or run the end-to-end evaluation and publish the kit the way Sibyl did.</p>
+<p>   at five, no LLM in the loop. Either say so every time, or run the end-to-end evaluation and    publish the kit the way Sibyl did. <em>(Done 2026-08-08, issue #75: every mention in tracked    markdown now carries the label, the README states the rule, and a test pins it.)</em></p>
 <p><strong>Revisit if</strong> Sibyl publishes pricing, reaches a stable release, and adds a graph layer. Track it rather than adopt it. At 305 downloads a month it is not yet a thing running in production anywhere but its author&#x27;s own infrastructure.</p></section>
 <section class="an-q" id="s9"><h3>What I did not verify <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">Stated so confidence in the rest is legible.</p>
 <ul>
@@ -334,7 +335,7 @@ in the palace rather than by the engine underneath it.</p></div></div></section>
 <p>  failed with <code>Host key verification failed</code>, so the server-side copy was never measured separately.</p></section>
 
 </main>
-<footer>Last updated: 2026-08-07 19:21 MDT · generated by design-doc-publish — self-contained, no external resources.</footer>
+<footer>Last updated: 2026-08-07 22:47 MDT · generated by design-doc-publish — self-contained, no external resources.</footer>
 </div>
 </body>
 </html>

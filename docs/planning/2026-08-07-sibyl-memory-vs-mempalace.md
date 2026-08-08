@@ -87,7 +87,7 @@ is the reverse. **We have no head-to-head evidence, and this document does not m
 Credit where it is due. Sibyl publishes `memory-bench-kit` with the scorer, the raw hypothesis
 files, the run ID, the model, the cost (`$43.78`, `$0.088/question`) and the wall clock. That is a
 materially higher standard of evidence than a percentage in a README, and it is the standard our
-own 96.6% figure does not meet.
+own 96.6% `R@5` figure does not meet.
 
 ## Where Sibyl is genuinely better
 
@@ -185,8 +185,10 @@ Pilot Sibyl as a replacement | blocked
    instruction has the right semantics carried by the wrong mechanism.
 2. **Write a linter.** 85% of the palace being one room is exactly what a health check exists to
    surface, and we found it by accident while researching a competitor.
-3. **Stop quoting 96.6% beside anyone else's accuracy figure.** It is a recall number. Either say
-   so every time, or run the end-to-end evaluation and publish the kit the way Sibyl did.
+3. **Stop quoting 96.6% beside anyone else's accuracy figure.** It is `R@5` — retrieval recall
+   at five, no LLM in the loop. Either say so every time, or run the end-to-end evaluation and
+   publish the kit the way Sibyl did. *(Done 2026-08-08, issue #75: every mention in tracked
+   markdown now carries the label, the README states the rule, and a test pins it.)*
 
 **Revisit if** Sibyl publishes pricing, reaches a stable release, and adds a graph layer. Track it
 rather than adopt it. At 305 downloads a month it is not yet a thing running in production anywhere
