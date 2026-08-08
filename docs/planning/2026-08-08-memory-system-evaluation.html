@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="design-doc-publish">
+<title>Memory-system evaluation — 12 criteria, 10 candidates, 5 combinations</title>
+<style>
+:root{--bg:#12181c;--surface:#1a2228;--ink:#e7edf0;--ink-2:#a8b6bd;--ink-3:#76858f;
+--line:#2a353c;--accent:#2dd4bf;--code:#232d34}
+:root[data-theme=dark]{--bg:#12181c;--surface:#1a2228;--ink:#e7edf0;--ink-2:#a8b6bd;
+--ink-3:#76858f;--line:#2a353c;--accent:#2dd4bf;--code:#232d34}
+:root[data-theme=light]{--bg:#f6f7f8;--surface:#fff;--ink:#1a2126;--ink-2:#4b5a63;
+--ink-3:#667279;--line:#dde3e6;--accent:#0f766e;--code:#eef1f3}
+@media print{:root,:root[data-theme=dark]{--bg:#f6f7f8;--surface:#fff;--ink:#1a2126;
+--ink-2:#4b5a63;--ink-3:#667279;--line:#dde3e6;--accent:#0f766e;--code:#eef1f3}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+font:15px/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:900px;margin:0 auto;padding:0 20px 72px}
+header{padding:40px 0 18px;border-bottom:1px solid var(--line);margin-bottom:20px}
+.eyebrow{color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+h1{font-size:clamp(22px,4vw,30px);margin:.3em 0;font-weight:750;letter-spacing:-.02em}
+h2{font-size:19px;font-weight:700;margin:1.4em 0 .4em}
+h3{font-size:16px;font-weight:650;margin:1.2em 0 .3em}
+p,li{color:var(--ink-2)}
+code{background:var(--code);border-radius:4px;padding:1px 5px;font:12.5px/1.4 ui-monospace,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto}
+pre code{background:none;padding:0}
+blockquote{border-left:3px solid var(--accent);margin:.6em 0;padding:.2em 0 .2em 14px;color:var(--ink-3)}
+table{border-collapse:collapse;width:100%;margin:.6em 0;font-size:13.5px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.telemetry th{white-space:nowrap;color:var(--ink-3);width:1%}
+.telemetry-section{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px 18px 14px;margin-top:24px}
+footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--ink-3);font-size:12.5px}
+
+:root{--sev-crit:#f87171;--sev-crit-bg:#3b1717;--sev-high:#fb923c;--sev-high-bg:#3a2410;--sev-med:#fbbf24;--sev-med-bg:#302a14;--sev-low:#a8b6bd;--sev-low-bg:#232d34;--req-c:#2dd4bf;--req-c-bg:#123531}
+:root[data-theme=dark]{--sev-crit:#f87171;--sev-crit-bg:#3b1717;--sev-high:#fb923c;--sev-high-bg:#3a2410;--sev-med:#fbbf24;--sev-med-bg:#302a14;--sev-low:#a8b6bd;--sev-low-bg:#232d34;--req-c:#2dd4bf;--req-c-bg:#123531}
+:root[data-theme=light]{--sev-crit:#b91c1c;--sev-crit-bg:#fdecec;--sev-high:#c2410c;--sev-high-bg:#fdeee2;--sev-med:#955a06;--sev-med-bg:#f8f2e2;--sev-low:#4b5a63;--sev-low-bg:#eef1f3;--req-c:#0f766e;--req-c-bg:#e6f2f0}
+@media print{:root,:root[data-theme=dark]{--sev-crit:#b91c1c;--sev-crit-bg:#fdecec;--sev-high:#c2410c;--sev-high-bg:#fdeee2;--sev-med:#955a06;--sev-med-bg:#f8f2e2;--sev-low:#4b5a63;--sev-low-bg:#eef1f3;--req-c:#0f766e;--req-c-bg:#e6f2f0}}
+.score{font:11.5px/1.4 ui-monospace,Menlo,Consolas,monospace;font-weight:700;background:var(--code);color:var(--accent);border-radius:5px;padding:1px 6px}
+.sev{font-size:11px;font-weight:700;letter-spacing:.03em;padding:1px 7px;border-radius:999px;text-transform:uppercase;white-space:nowrap}
+.sev-critical{color:var(--sev-crit);background:var(--sev-crit-bg)}
+.sev-high{color:var(--sev-high);background:var(--sev-high-bg)}
+.sev-medium{color:var(--sev-med);background:var(--sev-med-bg)}
+.sev-low{color:var(--sev-low);background:var(--sev-low-bg)}
+.req{font-size:11px;font-weight:700;letter-spacing:.03em;padding:1px 6px;border-radius:5px;color:var(--req-c);background:var(--req-c-bg)}
+.req-must-not,.req-should-not{color:var(--sev-crit);background:var(--sev-crit-bg)}
+.req-may{color:var(--ink-3);background:var(--code)}
+
+:root{--accent-soft:color-mix(in srgb,var(--accent) 12%,transparent)}
+.blk{margin:14px 0}
+.blk-stats{display:flex;flex-wrap:wrap;gap:10px}
+.blk-stats .blk-item{flex:1 1 130px;background:var(--surface);border:1px solid var(--line);
+border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.blk-stats .blk-value{font-size:22px;font-weight:750;letter-spacing:-.02em;color:var(--ink)}
+.blk-stats .is-accent .blk-value{color:var(--accent)}
+.blk-stats .blk-label{font:11px/1.3 ui-monospace,Menlo,Consolas,monospace;
+letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.blk-bar{display:block;height:4px;border-radius:999px;background:var(--code);margin-top:6px}
+.blk-bar .blk-fill{display:block;height:100%;border-radius:999px;background:var(--accent)}
+.blk-verdict .blk-row{display:flex;gap:10px;align-items:baseline;padding:8px 0;
+border-bottom:1px solid var(--line)}
+.blk-verdict .blk-row:last-child{border-bottom:0}
+.blk-verdict .blk-key{font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;font-weight:700;
+letter-spacing:.06em;text-transform:uppercase;color:var(--accent);flex:0 0 auto;min-width:64px}
+.blk-verdict .blk-text{color:var(--ink);font-size:16px;font-weight:600}
+.blk-chips{display:flex;flex-wrap:wrap;gap:6px}
+.blk-chip{font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 9px;
+border-radius:999px;text-transform:uppercase;white-space:nowrap;
+color:var(--ink-2);background:var(--code);border:1px solid var(--line)}
+.blk-chip.is-done,.blk-chip.is-shipped,.blk-chip.is-merged{color:var(--req-c);
+background:var(--req-c-bg);border-color:transparent}
+.blk-chip.is-wip,.blk-chip.is-pending{color:var(--sev-med);background:var(--sev-med-bg);
+border-color:transparent}
+.blk-chip.is-blocked,.blk-chip.is-failed{color:var(--sev-crit);background:var(--sev-crit-bg);
+border-color:transparent}
+.blk-callout>.blk-callout{border-left:3px solid var(--ink-3);background:var(--code);
+border-radius:0 8px 8px 0;padding:10px 14px}
+.blk-callout .blk-title{font-weight:700;color:var(--ink);margin-bottom:.2em}
+.blk-callout p{margin:0;color:var(--ink-2)}
+.blk-callout .is-warn,.blk-callout .is-high{border-left-color:var(--sev-high);
+background:var(--sev-high-bg)}
+.blk-callout .is-stop,.blk-callout .is-critical{border-left-color:var(--sev-crit);
+background:var(--sev-crit-bg)}
+.blk-callout .is-note,.blk-callout .is-info{border-left-color:var(--accent)}
+.blk-legend dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0}
+.blk-legend dt{font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;font-weight:700;
+letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);
+border-left:3px solid var(--ink-3);padding-left:8px}
+.blk-legend dt.is-done{border-left-color:var(--req-c)}
+.blk-legend dt.is-blocked{border-left-color:var(--sev-crit)}
+.blk-legend dt.is-solid{border-left-color:var(--accent)}
+.blk-legend dd{margin:0;color:var(--ink-2);font-size:13.5px}
+.blk-meter{display:grid;grid-template-columns:1fr auto;gap:2px 12px;margin:8px 0}
+.blk-meter .blk-label{color:var(--ink-2);font-size:13.5px}
+.blk-meter .blk-value{font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--ink-3)}
+.blk-meter .blk-track{grid-column:1/-1;height:6px;border-radius:999px;background:var(--code);
+overflow:hidden}
+.blk-meter .blk-fill{display:block;height:100%;background:var(--accent)}
+.blk-meter.is-accent .blk-fill{background:var(--accent)}
+.blk-findings .blk-finding{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;
+padding:10px 0;border-bottom:1px solid var(--line)}
+.blk-findings .blk-finding:last-child{border-bottom:0}
+.blk-sev{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+padding:2px 7px;border-radius:999px;white-space:nowrap;align-self:start;
+color:var(--sev-low);background:var(--sev-low-bg)}
+.is-critical>.blk-sev{color:var(--sev-crit);background:var(--sev-crit-bg)}
+.is-high>.blk-sev{color:var(--sev-high);background:var(--sev-high-bg)}
+.is-medium>.blk-sev{color:var(--sev-med);background:var(--sev-med-bg)}
+.blk-findings .blk-title{font-weight:650;color:var(--ink)}
+.blk-findings .blk-text{grid-column:2;color:var(--ink-2);font-size:13.5px}
+.blk-prov{grid-column:2;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;
+color:var(--ink-3)}
+.blk-steps ol,.blk-steps{margin:0;padding:0;list-style:none}
+.blk-step{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;padding:9px 0;
+border-bottom:1px solid var(--line)}
+.blk-step:last-child{border-bottom:0}
+.blk-step .blk-n{font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;font-weight:700;
+color:var(--accent);align-self:start}
+.blk-step .blk-title{font-weight:650;color:var(--ink)}
+.blk-step .blk-text{grid-column:2;color:var(--ink-2);font-size:13.5px}
+.blk-nodes ul{list-style:none;margin:0;padding:0}
+.blk-nodes ul ul{margin-left:18px;padding-left:14px;border-left:1px solid var(--line)}
+.blk-node{background:var(--surface);border:1px solid var(--line);border-radius:8px;
+padding:7px 11px;margin:6px 0;display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}
+/* A child list lives INSIDE its parent <li>, so on a flex parent it becomes a flex
+   SIBLING of the label and renders beside it instead of beneath. Found by looking at a
+   rendered three-level tree, not by reading the markup. */
+.blk-node>ul{flex-basis:100%;margin-top:6px}
+/* Two roots in ONE nodes block are a before/after pair; a template opts in by
+   gridding this top-level list. Two separate fences cannot pair — each is its
+   own wrapper with a single child. */
+.blk-nodes>ul{display:grid;gap:0 16px}
+.blk-node .blk-label{font-weight:650;color:var(--ink)}
+.blk-node .blk-text{color:var(--ink-3);font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.blk-edge{flex-basis:100%;font:10.5px/1.4 ui-monospace,Menlo,Consolas,monospace;
+letter-spacing:.05em;text-transform:uppercase;color:var(--accent)}
+.blk-edge.is-proposed{color:var(--ink-3);border-bottom:1px dashed var(--ink-3);
+align-self:start;display:inline-block;flex-basis:auto}
+.blk-provenance dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;
+font-size:13px}
+.blk-provenance dt{font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;font-weight:700;
+letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
+.blk-provenance dd{margin:0;color:var(--ink-2)}
+
+body.tpl-analysis{background:radial-gradient(1100px 560px at 82% -12%,#1a243f 0%,transparent 60%),radial-gradient(900px 500px at -12% 8%,#17203a 0%,transparent 55%),var(--bg)}
+.tpl-analysis .wrap{max-width:880px;padding:0 24px 96px}
+.tpl-analysis header{padding:48px 0 10px;border-bottom:none;margin-bottom:26px}
+.tpl-analysis h1{font-size:clamp(28px,5vw,42px)}
+.tpl-analysis h2{font-size:22px;margin:40px 0 14px}
+
+/* #76 — the frame's companions. The FRAME slots above own ground, measure and type scale; these
+   are the treatments that only make sense once those exist.
+
+   THE EYEBROW, as the reference has it: an inline-block pill in accent over a tint of itself,
+   not a bare line of small caps. `--req-c-bg` rather than a new value — it is the accent hue's
+   own tint, already in the token layer and already contrast-scored there. */
+.tpl-analysis header .eyebrow{display:inline-block;color:var(--accent);
+background:var(--req-c-bg);border:1px solid var(--line);border-radius:999px;padding:5px 13px;
+font-size:11.5px;letter-spacing:.14em}
+/* The headline gets the reference's tight leading and a measure of its own: a display line that
+   runs the full 880px reads as a paragraph, not a title. */
+.tpl-analysis h1{line-height:1.12;max-width:20ch}
+/* The lede — the reference's `.lead`. This type's first-read element is the headline ANSWER, and
+   the subtitle is where it lands. */
+.tpl-analysis header .sub{font-size:17.5px;line-height:1.6;color:var(--ink-2);max-width:62ch}
+.tpl-analysis .an-index{background:var(--surface);border:1px solid var(--line);
+border-radius:12px;padding:10px 18px;margin:18px 0}
+.tpl-analysis .an-index ol{margin:.2em 0;padding-left:1.2em}
+.tpl-analysis .an-index li{margin:.25em 0}
+.tpl-analysis .an-index a{color:var(--ink-2);text-decoration:none;border-bottom:1px solid var(--line)}
+.tpl-analysis .an-index a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.tpl-analysis .an-q{border-top:1px solid var(--line);padding-top:14px;margin-top:24px}
+/* #76/D70: the reference's 22px section scale and 40px rhythm, applied where the page can
+   actually read them. The FRAME's h2 slots cannot reach a sectioned style. */
+.tpl-analysis .an-q>h3{font-size:22px;margin:40px 0 14px}
+.tpl-analysis .an-q h3{font-size:17px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.tpl-analysis .an-answer{font-size:16.5px;line-height:1.55;color:var(--ink);font-weight:550;
+border-left:3px solid var(--accent);padding-left:14px;margin:.5em 0 .9em}
+/* The base .chip shape lives in _ROADMAP_STYLE, which only roadmap and
+   dashboard inject — so an analysis chip needs its own shape, not just a
+   colour, or it renders as tight coloured text. */
+.tpl-analysis .an-conf{font:10.5px/1.4 ui-monospace,Menlo,Consolas,monospace;
+font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:999px;
+text-transform:uppercase;white-space:nowrap}
+.tpl-analysis .c-measured{color:var(--req-c);background:var(--req-c-bg)}
+.tpl-analysis .c-confirmed{color:var(--req-c);background:var(--req-c-bg)}
+.tpl-analysis .c-inferred{color:var(--sev-med);background:var(--sev-med-bg)}
+.tpl-analysis .c-unstated{color:var(--ink-3);background:var(--code)}
+/* Stepped figure — the reference's `<ol class="steps">`: the number is the quiet index, the lead
+   sentence carries the weight, and the detail drops to the note voice underneath it. Static, so
+   there is nothing to open; see the docstring for why this is `steps` and not `steprail`. */
+.tpl-analysis .an-figure{background:var(--surface);border:1px solid var(--line);
+border-radius:12px;padding:14px 18px;margin:18px 0}
+.tpl-analysis .an-figure ol{display:grid;gap:12px;margin:0;padding:0}
+.tpl-analysis .an-figure .blk-step{display:grid;grid-template-columns:auto 1fr;gap:2px 12px}
+.tpl-analysis .an-figure .blk-n{grid-row:1/3;font:700 13px/1.5 ui-monospace,Menlo,Consolas,
+monospace;color:var(--accent);align-self:start}
+.tpl-analysis .an-figure .blk-title{font-weight:650;color:var(--ink)}
+.tpl-analysis .an-figure .blk-text{color:var(--ink-3);font-size:13.5px;line-height:1.55}
+/* Measurement callout — the reference's `.note` voice, promoted to a panel because in this type
+   a measurement is the evidence the answer rests on. */
+.tpl-analysis .an-measure>.blk-callout{background:var(--code);border-left-color:var(--accent);
+border-radius:10px;padding:10px 15px}
+.tpl-analysis .an-measure .blk-title{font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+/* Comparison table — the reference's `<table class="compare">`. No marker: a markdown table gets
+   no CLASS or wrapper hook from the renderer (its structural hooks — table/thead/tbody/td — are
+   all it has), so this styles the bare element scoped to this template, exactly as `review` and
+   `dashboard` do for their zebra rows.
+   `:not(.telemetry):not(.gates)` is NOT defensive dressing. The renderer appends its own
+   `table.gates` and `table.telemetry` inside `<main>`, so an unqualified `.tpl-analysis table`
+   restyled them too — a leak the cross-style gate CANNOT see, because it stays inside `analysis`.
+   Found by review, reproduced, then excluded.
+   The row-header column is `tbody td:first-child`, NOT `tbody th`: markdown emits every body
+   cell as `<td>`, so the `th` form was a dead selector that styled nothing. Also review's. */
+.tpl-analysis table:not(.telemetry):not(.gates){border:1px solid var(--line);border-radius:12px;
+border-collapse:separate;border-spacing:0;overflow:hidden;margin:18px 0}
+.tpl-analysis table:not(.telemetry):not(.gates) thead th{background:var(--code);
+font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;
+color:var(--ink-3);text-align:left}
+.tpl-analysis table:not(.telemetry):not(.gates) tbody td:first-child{font-weight:650;
+color:var(--ink)}
+.tpl-analysis table:not(.telemetry):not(.gates) tbody tr:nth-child(even){background:var(--code)}
+
+:root{--accent:#7f9ae8;}
+:root[data-theme=dark]{--accent:#7f9ae8;}
+:root[data-theme=light]{--accent:#1f3f9e;}
+@media print{:root,:root[data-theme=dark]{--accent:#1f3f9e;}}
+</style>
+</head>
+<body class="tpl-analysis">
+<div class="wrap">
+<header>
+<div class="eyebrow">design artifact · updated 2026-08-08 01:38 MDT</div>
+<h1>Memory-system evaluation — 12 criteria, 10 candidates, 5 combinations</h1>
+
+</header>
+<main>
+<p><strong>The answer in one line: no single product beats what we have — but two combinations do, and the highest-scoring path keeps MemPalace as the capture layer and builds around it.</strong> MemPalace as it stands today scores 29 of 50 and is the measured baseline. The best single product (Graphiti, 30) beats it by one point on paper. The pragmatic winners are combinations: harden-MemPalace (41) and MemPalace-plus-txtai-shadow (36) are buildable this month, and the full event-sourced stack (47) is the ceiling if the seams prove themselves.</p>
+<div class="blk blk-verdict"><div class="blk-row is-ship"><span class="blk-key">ship</span><span class="blk-text">Run the txtai shadow index (C1) and the hygiene hardening (C0) now — together they cover 10 of 12 criteria and neither touches the capture path.</span></div><div class="blk-row is-risk"><span class="blk-key">risk</span><span class="blk-text">Every combination score is a DESIGN grade — nothing but the baseline has been measured on this host.</span></div><div class="blk-row is-risk"><span class="blk-key">risk</span><span class="blk-text">The criteria deliberately omit two axes that matter: build effort and upstream governance. They are reported beside the scores, never inside them.</span></div></div>
+<nav class="an-index"><ol><li><a href="#s1">Where these criteria came from</a></li><li><a href="#s2">The 12 criteria</a></li><li><a href="#s3">Three evidence classes — read every grade through this</a></li><li><a href="#s4">Baseline: MemPalace 3.6.0 as it stands — 29/50, all grades Measured</a></li><li><a href="#s5">Single products</a></li><li><a href="#s6">Combinations — all grades Design</a></li><li><a href="#s7">Recommendation</a></li></ol></nav>
+<section class="an-q" id="s1"><h3>Where these criteria came from <span class="chip c-measured an-conf">MEASURED</span></h3><p class="an-answer">Three lists were written independently on 2026-08-08 — one by this session, one by GPT-5.6 (Sol), one by qwen3.8-max — from the same facts and failure history, with none seeing another&#x27;s list. Five themes appeared in all three. The owner then added the three consumer-side criteria the machinery-focused lists had missed: agent usability, data hygiene (dedup + lifecycle), and consolidation. The merged set is 12 criteria in three ranked tiers.</p>
+<p>Every tier-1 and tier-2 criterion traces to a failure measured in this workspace this month — none is speculative.</p></section>
+<section class="an-q" id="s2"><h3>The 12 criteria <span class="chip c-inferred an-conf">UNVERIFIED</span></h3><h3>Tier 1 — usefulness gates (weight ×3). Fail one, the system is out</h3>
+<table>
+<thead><tr><th>#</th><th>Criterion</th><th>The test</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>Agent-usable retrieval.</strong> A Claude, GPT or qwen agent mid-task gets the right memory into context in 1–2 tool calls, without knowing the storage schema.</td><td>Ten task questions whose answers live in memory, asked by a FRESH agent over MCP. Pass = right memory in ≤2 calls for 8 of 10, inside a fixed token budget, across two model families.</td></tr>
+<tr><td>2</td><td><strong>Automatic, crash-safe, concurrent capture with cross-project isolation.</strong></td><td>Kill the writer mid-save: nothing acknowledged is lost. Run concurrent sessions: zero contention errors, zero cross-project hits.</td></tr>
+<tr><td>3</td><td><strong>Local-first, deny-by-default egress.</strong></td><td>Block outbound network. Capture and recall still work. Zero outbound packets carry memory content.</td></tr>
+<tr><td>4</td><td><strong>Staleness-aware retrieval with a cohort ceiling.</strong></td><td>Fixed 20-query set: stale results under 5% of top-10, no ingestion cohort over 20% of top-10, full top-10 fill retained.</td></tr>
+<tr><td>5</td><td><strong>Provenance on every record</strong> — writer, timestamp, source, session.</td><td>Sample 100 records; all carry writer, timestamp and source. An audit like #74 is a query, not archaeology.</td></tr>
+</tbody>
+</table>
+<h3>Tier 2 — hygiene gates (weight ×2)</h3>
+<table>
+<thead><tr><th>#</th><th>Criterion</th><th>The test</th></tr></thead>
+<tbody>
+<tr><td>6</td><td><strong>Deduplication</strong> at write or by scheduled pass.</td><td>Write identical content twice: one record survives or the duplicate is linked. Lint asserts zero duplicate content hashes corpus-wide.</td></tr>
+<tr><td>7</td><td><strong>Lifecycle archival by policy</strong> — archive, never delete.</td><td>A policy (&quot;unrecalled N days and superseded&quot;) moves records to archive. Default recall excludes them; explicit recall finds them.</td></tr>
+<tr><td>8</td><td><strong>Honest tooling.</strong> Non-zero exits on incomplete work; every displayed count reconciles against the store.</td><td>Run each mutating command against an empty scope: exit ≠ 0. Every surfaced count equals a direct store query, zero tolerance.</td></tr>
+</tbody>
+</table>
+<h3>Tier 3 — scored differentiators (weight ×1)</h3>
+<table>
+<thead><tr><th>#</th><th>Criterion</th><th>The test</th></tr></thead>
+<tbody>
+<tr><td>9</td><td><strong>Consolidation</strong> — memories combine into higher-order thoughts, with source citations.</td><td>Seed 5 related memories. After a consolidation pass, a synthesis record cites all 5, and topic recall returns it above its fragments.</td></tr>
+<tr><td>10</td><td><strong>Closed predicate vocabulary + supersede-at-a-boundary.</strong></td><td>A triple with an unknown predicate is rejected. An as-of query at a supersede boundary returns exactly one value.</td></tr>
+<tr><td>11</td><td><strong>Export and rebuild.</strong> Engine-neutral export; every index rebuilds from it.</td><td>Export, wipe, rebuild in a clean environment: hashes match, fixed query set returns the same results.</td></tr>
+<tr><td>12</td><td><strong>MCP surface for read AND write</strong> — a preference and tiebreaker, not a gate.</td><td>List and call the tools from two different MCP clients.</td></tr>
+</tbody>
+</table>
+<p><strong>Scoring.</strong> Pass = 2, partial = 1, fail = 0, unverified = 0 (listed as an evidence gap, never silently folded into fail). Tier weights ×3 / ×2 / ×1. Maximum = 50.</p></section>
+<section class="an-q" id="s3"><h3>Three evidence classes — read every grade through this <span class="chip c-measured an-conf">MEASURED</span></h3><div class="blk blk-chips"><span class="blk-chip is-done">mempalace baseline</span><span class="blk-chip is-wip">single products</span><span class="blk-chip is-plan">combinations</span></div>
+<ul>
+<li><strong>Measured (M)</strong> — tested on this host, this month. Only the MemPalace baseline qualifies.</li>
+<li><strong>Paper (P)</strong> — confirmed from the product&#x27;s own repository or documentation, fetched live.</li>
+<li><strong>Design (D)</strong> — a grade for an architecture that exists as a sketch, not a deployment.</li>
+</ul>
+<p>A combination scoring 47 on design is a weaker claim than a baseline scoring 29 on measurement. The scoreboard says which is which.</p></section>
+<section class="an-q" id="s4"><h3>Baseline: MemPalace 3.6.0 as it stands — 29/50, all grades Measured <span class="chip c-measured an-conf">MEASURED</span></h3><p class="an-answer">Post-#77: 22,129 drawers, 51 wings, 74 rooms, <code>documentation</code> reduced from 84.7% to 1,736 drawers, <code>archive</code> separable at query time.</p>
+<table>
+<thead><tr><th>#</th><th>Criterion</th><th>Grade</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Agent-usable retrieval</td><td>~1</td><td>~29 MCP tools exist and are used daily. The 10-question fresh-agent test has never run. Pre-fix, 73.5% of hits were stale-cohort.</td></tr>
+<tr><td>2</td><td>Capture</td><td>~1</td><td>3,209 drawers in 4 months, hands-free. But writer-lease contention observed, and cross-project scoping bug #54 is open.</td></tr>
+<tr><td>3</td><td>Local-first</td><td>✓2</td><td>Local MiniLM embeddings, no API key anywhere in the path.</td></tr>
+<tr><td>4</td><td>Staleness-aware</td><td>~1</td><td>No decay or recency weighting (independent analysis + our measurement). The <code>archive</code> exclusion lever now exists but is manual.</td></tr>
+<tr><td>5</td><td>Provenance</td><td>✓2</td><td><code>added_by</code>, <code>filed_at</code>, <code>source_file</code> on records. Caveat: 1,140 drawers carry no source.</td></tr>
+<tr><td>6</td><td>Dedup</td><td>~1</td><td><code>add_drawer</code> checks duplicates per its contract. Corpus-wide hash audit never run.</td></tr>
+<tr><td>7</td><td>Lifecycle archival</td><td>✗0</td><td>Nothing ages anything. #77 was a one-time manual move.</td></tr>
+<tr><td>8</td><td>Honest tooling</td><td>~1</td><td>Upstream web UI displayed 243,857 &quot;drawers&quot;; the real count is 23,558 (measured). Our own added tools are now tested honest.</td></tr>
+<tr><td>9</td><td>Consolidation</td><td>✗0</td><td>Structurally absent — #74: drawers accumulate until a human re-files them.</td></tr>
+<tr><td>10</td><td>Vocabulary + supersede</td><td>~1</td><td>Supersede works (2-for-2 measured, zero drift). Vocabulary open: 144 predicates over 164 triples.</td></tr>
+<tr><td>11</td><td>Export/rebuild</td><td>~1</td><td><code>exporter.py</code> ships (markdown, no wikilinks). A rebuild drill has never run.</td></tr>
+<tr><td>12</td><td>MCP</td><td>✓2</td><td>In production use daily.</td></tr>
+</tbody>
+</table>
+<p>Tier sums: T1 = 7×3 = 21 · T2 = 2×2 = 4 · T3 = 4×1 = 4 → <strong>29/50</strong>.</p></section>
+<section class="an-q" id="s5"><h3>Single products <span class="chip c-measured an-conf">MEASURED</span></h3><h3>Graphiti (Zep) — 30/50, Paper</h3>
+<p>The only single product to out-score the baseline, by one point.</p>
+<table>
+<thead><tr><th>#</th><th>Grade</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>~1</td><td>Ships an MCP server; ergonomics untested here.</td></tr>
+<tr><td>2</td><td>✗0</td><td>No capture of its own — episodes are pushed to it, and the write path calls an LLM.</td></tr>
+<tr><td>3</td><td>✓2</td><td>Verified: any OpenAI-compatible endpoint including local models; FalkorDB local.</td></tr>
+<tr><td>4</td><td>✓2</td><td>Bi-temporal validity windows are its core design.</td></tr>
+<tr><td>5</td><td>✓2</td><td>Every fact traces to its source episode.</td></tr>
+<tr><td>6–7</td><td>~1 / ~1</td><td>Entity resolution at extraction; edge invalidation is not archival policy.</td></tr>
+<tr><td>8</td><td>U0</td><td>Unverified.</td></tr>
+<tr><td>9</td><td>~1</td><td>Entity summaries evolve over time — the closest thing to consolidation in this class.</td></tr>
+<tr><td>10</td><td>✓2</td><td>Prescribed ontology supported.</td></tr>
+<tr><td>11</td><td>U0</td><td>Export/backup behavior unverified (flagged by Sol).</td></tr>
+<tr><td>12</td><td>✓2</td><td>MCP server in the repository.</td></tr>
+</tbody>
+</table>
+<p>T1 21 · T2 4 · T3 5 → <strong>30</strong>. Losing trade-off: LLM-in-the-write-path (latency, nondeterminism, a runtime to operate) and a graph database to run.</p>
+<h3>Basic Memory — 26/50, Paper</h3>
+<p>AGPL-3.0, markdown canonical, SQLite index, MCP-native, no server. The only candidate whose native format gives Obsidian a real graph (wikilinks are the grammar). T1: agent-usable ✓2 (behavior-hinted MCP tools, <code>build_context</code>), capture ~1 (Claude Code plugin exists; volume risk at ~27 chunks/day is real), local ✓2, staleness ~1, provenance ~1 → 21. T2: 0 (dedup and tooling unverified, lifecycle manual). T3: vocabulary ~1 (entity/observation/relation grammar + schema tools), export ✓2 (&quot;index rebuilds from markdown&quot;), MCP ✓2 → 5. <strong>26.</strong></p>
+<h3>txtai — 22/50, Paper</h3>
+<p>Apache-2.0, one Python service, CPU-fine. Hybrid sparse+dense verified (<code>hybrid: true</code>), MCP verified (<code>mcp: true</code>), SQL metadata filters give date-aware retrieval. It is infrastructure: no capture, no lifecycle, no consolidation — you build the memory semantics. T1 18 · T2 0 · T3 4 → <strong>22.</strong> As a <em>component</em> it is the strongest retrieval engine here; as a <em>system</em> it is incomplete by design.</p>
+<h3>Weaviate CE — 19/50, Paper</h3>
+<p>BSD-3, Docker, hybrid BM25+vector native, typed cross-references. Same shape as txtai but operationally heavier, and its MCP claim (v1.37) is unverified. <strong>19.</strong></p>
+<h3>Letta — disqualified at gate 3, with one distinction worth recording</h3>
+<p>Letta&#x27;s own documentation: the git memory repository is &quot;Stored in cloud (GCS)&quot;, reached via the Letta API with a valid key, and its agent prompt warns memory &quot;may be synced off this machine&quot;. That fails local-first as verified, not as suspected. <strong>Disqualified.</strong> It would have scored best-in-class on criterion 9 — sleep-time reflection, defragmentation, git-tracked consolidation — which is exactly the shape criterion 9 wants from whoever passes the gates.</p>
+<h3>Screened out — named, with the reason each was not graded</h3>
+<table>
+<thead><tr><th>Candidate</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><td>Mem0 / OpenMemory</td><td>Graph bolted onto flat memory (both consultants). Vendor self-reports 93.4% on LongMemEval where a third party measured 32.4% — treat its claims accordingly. Not graded: evidence gaps on local storage ownership and deletion semantics.</td></tr>
+<tr><td>MemOS</td><td>The tiered L1→L2→L3 promotion is the right idea. Months old, local plugin v1.0, heavy self-hosted path (Neo4j + Qdrant). Revisit later.</td></tr>
+<tr><td>HippoRAG</td><td>Research framework (multi-hop retrieval via Personalized PageRank). A component to evaluate behind a retrieval layer, not a system of record.</td></tr>
+<tr><td>Cognee, LightRAG, A-Mem, supermemory, MIRIX</td><td>Immature, wrong problem class, or no maturity evidence at this volume — per two independent consultants. Named so they are not re-litigated.</td></tr>
+</tbody>
+</table></section>
+<section class="an-q" id="s6"><h3>Combinations — all grades Design <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">Every combination keeps MemPalace capture running. None replaces the write path until parity is proven — the capture pipeline is the most valuable property in the stack, and both consultants independently refused to risk it.</p>
+<table>
+<thead><tr><th></th><th>C0 Harden MemPalace</th><th>C1 + txtai shadow</th><th>C2 + Graphiti layer</th><th>C3 + Basic Memory</th><th>C4 Full stack</th></tr></thead>
+<tbody>
+<tr><td>What is added</td><td>archive policy, dedup lint, consolidation cron, declared vocabulary</td><td>txtai dual-write; hybrid + date-weighted retrieval over MCP</td><td>async LLM extraction into FalkorDB; temporal graph</td><td>consolidation cron writes cited synthesis notes as markdown; Obsidian graph for free</td><td>owned event journal; txtai retrieval + Graphiti graph + consolidation</td></tr>
+<tr><td>Tier 1</td><td>24</td><td>27</td><td>24</td><td>24</td><td>30</td></tr>
+<tr><td>Tier 2</td><td>12</td><td>4</td><td>4</td><td>6</td><td>10</td></tr>
+<tr><td>Tier 3</td><td>5</td><td>5</td><td>6</td><td>7</td><td>7</td></tr>
+<tr><td><strong>Total</strong></td><td><strong>41</strong></td><td><strong>36</strong></td><td><strong>34</strong></td><td><strong>37</strong></td><td><strong>47</strong></td></tr>
+<tr><td>Effort</td><td>M</td><td><strong>S</strong></td><td>L</td><td>M</td><td>XL</td></tr>
+<tr><td>New moving parts</td><td>none</td><td>1 service</td><td>graph DB + LLM runtime + pipeline</td><td>1 MCP server + cron</td><td>journal + 2 engines + workers</td></tr>
+</tbody>
+</table>
+<p>Why each scores where it does:</p>
+<ul>
+<li><strong>C0 (41)</strong> wins tier 2 outright — dedup, archival and honest tooling are cheap to build in</li>
+</ul>
+<p>  this repository and, once built, are <em>ours and tested</em>. It cannot lift criterion 1 (agent   ergonomics unchanged) and leaves the single-maintainer governance risk untouched.</p>
+<ul>
+<li><strong>C1 (36)</strong> is Sol&#x27;s shadow-index design: capture stays authoritative, txtai gets every event</li>
+</ul>
+<p>  through an idempotent replay, reads cut over only if the fixed query set proves it better.   Smallest effort, fully reversible, and it is the cheapest way to run the criterion-1 test on   a real alternative.</p>
+<ul>
+<li><strong>C2 (34)</strong> buys the best graph (bi-temporal, prescribed ontology) at the highest single-layer</li>
+</ul>
+<p>  cost: FalkorDB, a local LLM runtime, and an extraction pipeline whose quality must be   monitored or it rebuilds the vestigial-graph failure with more infrastructure.</p>
+<ul>
+<li><strong>C3 (37)</strong> is the consolidation play: a scheduled agent job reads recent drawers, writes</li>
+</ul>
+<p>  synthesis notes with drawer-id citations into Basic Memory&#x27;s markdown, and Obsidian&#x27;s graph   view lights up for free — wikilinks are the native grammar. Raw recall stays in MemPalace.</p>
+<ul>
+<li><strong>C4 (47)</strong> is Sol&#x27;s event-sourced architecture: hooks append to an owned journal; MemPalace,</li>
+</ul>
+<p>  txtai, Graphiti and a policy worker all consume it. It is the only design that fixes capture   crash-safety (criterion 2) at the source, and the only one where &quot;replace MemPalace later&quot;   becomes a consumer swap instead of a migration. It is also the most operations this host has   ever been asked to carry.</p>
+<div class="blk blk-callout an-measure"><div class="blk-callout is-measure"><div class="blk-title">What the score deliberately leaves out</div><p>Two axes are reported beside the table, never inside it. EFFORT: C4&#x27;s 47 costs roughly a
+quarter&#x27;s work; C1&#x27;s 36 costs days. GOVERNANCE: C0 leaves the single-maintainer upstream risk
+fully in place; C4 retires it. A score that blended these in would hide the trade instead of
+presenting it.</p></div></div></section>
+<section class="an-q" id="s7"><h3>Recommendation <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">Sequence, not a single pick. Each step is independently valuable and independently reversible.</p>
+<div class="blk blk-steps an-figure"><ol><li class="blk-step"><span class="blk-n">1</span><span class="blk-title">Ship C0&#x27;s hygiene pieces</span><span class="blk-text">Dedup lint, archive policy, honest-count checks. Ours, tested, no new services. Lifts the baseline to ~35 regardless of what else happens.</span></li><li class="blk-step"><span class="blk-n">2</span><span class="blk-title">Stand up C1&#x27;s txtai shadow</span><span class="blk-text">Dual-write behind an idempotent queue; MemPalace stays authoritative. Days of work, fully reversible.</span></li><li class="blk-step"><span class="blk-n">3</span><span class="blk-title">Run the criterion-1 test on both</span><span class="blk-text">Ten questions, fresh agent, two model families, over MCP. This is the measurement that has never existed — it decides the read path.</span></li><li class="blk-step"><span class="blk-n">4</span><span class="blk-title">Pilot C3&#x27;s consolidation cron</span><span class="blk-text">One scheduled agent job writing cited synthesis notes into Basic Memory markdown. First real test of criterion 9, and the Obsidian graph arrives with it.</span></li><li class="blk-step"><span class="blk-n">5</span><span class="blk-title">Decide on C4 with evidence</span><span class="blk-text">Only if steps 2–4 prove their seams. The journal is the point of no cheap return — enter it measured, not hopeful.</span></li></ol></div>
+<p>The honest bottom line: <strong>the evaluation did not find a product to replace MemPalace. It found that MemPalace&#x27;s capture is worth keeping, its retrieval and hygiene are worth augmenting, and the two augmentations that matter most (txtai for retrieval, a consolidation job for thoughts) are small, separable, and testable against criteria we now have in writing.</strong></p>
+<div class="blk blk-provenance"><dl><dt>source</dt><dd>docs/planning/2026-08-08-memory-system-evaluation.md</dd><dt>criteria authors</dt><dd>claude-fable-5, gpt-5.6-sol, qwen3.8-max — independent lists, merged; consumer criteria added by the owner</dd><dt>baseline measured</dt><dd>2026-08-08, this host, post-#77 split</dd><dt>product facts</dt><dd>fetched live from each repository 2026-08-08</dd><dt>epic</dt><dd>#71 (closed); consults follow rawgentic WF13 shape</dd></dl></div></section>
+
+</main>
+<footer>Last updated: 2026-08-08 01:38 MDT · generated by design-doc-publish — self-contained, no external resources.</footer>
+</div>
+</body>
+</html>
