@@ -1,0 +1,28 @@
+{
+  "issue": 77,
+  "purpose": "Fixed query set for the before-and-after retrieval measurement required by #77 AC5. The after-run MUST use this file unchanged; a query set edited between runs measures nothing.",
+  "measured_before": "2026-08-08",
+  "top_k": 10,
+  "queries": [
+    "how do we deploy the studio",
+    "why did we choose this database",
+    "what is the test gate for this project",
+    "known gotcha with the mirror",
+    "owner decision about merging pull requests",
+    "how does the recall hook work",
+    "what did we decide about the memory server",
+    "chorestory chore approval flow",
+    "vercel deployment problem",
+    "what broke in CI last time",
+    "how is the knowledge graph structured",
+    "what is the rule for pushing to main",
+    "how do we handle secrets in this repo",
+    "what does the session registry do",
+    "why is the documentation room so large",
+    "how do chores get scheduled",
+    "what happened with the grocery scraper",
+    "how do I run the oracle",
+    "what is the plan for the fleet",
+    "which model reviews the code"
+  ]
+}
