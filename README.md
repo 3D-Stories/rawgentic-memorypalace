@@ -1,6 +1,22 @@
 # rawgentic-memorypalace
 
-**v0.4.2** · Claude Code plugin providing long-term memory powered by [MemPalace](https://github.com/milla-jovovich/mempalace). Bridges Claude Code's hook system to MemPalace's Python API via a slim HTTP gatekeeper + adapter layer, with native MemPalace hooks handling ingest.
+**v0.10.0** · Claude Code plugin providing long-term memory powered by [MemPalace](https://github.com/milla-jovovich/mempalace). Bridges Claude Code's hook system to MemPalace's Python API via a slim HTTP gatekeeper + adapter layer, with native MemPalace hooks handling ingest.
+
+## Benchmark numbers — the rule before you quote one
+
+**Upstream MemPalace's headline 96.6% is `R@5`: retrieval recall at five, with no LLM in the
+loop.** It asks "did the right answer appear in the top five retrieved items?" It is not an
+accuracy figure and it never becomes one by being written next to somebody else's.
+
+Anywhere this repository states that number, it states `R@5` in the same breath. Where it sits
+near another system's figure, the difference in what is being measured is stated there too, not
+in a footnote — because "we win by a point" is a conclusion neither number supports in either
+direction. Sibyl-Memory's 95.6%, for example, is end-to-end question-answering accuracy with a
+frontier model generating the answer: a retriever plus a model plus a prompt, scored as one
+thing.
+
+We have no head-to-head result, and this repository does not manufacture one. See
+[the comparison](docs/planning/2026-08-07-sibyl-memory-vs-mempalace.md) and issue #75.
 
 ## Architecture (r3)
 
@@ -177,7 +193,7 @@ python -m rawgentic_memory.palace_lint
 python -m rawgentic_memory.palace_lint --json --max-items 50
 ```
 
-Test suite — 308 tests, from `.venv/bin/pytest tests/ -q` on 2026-08-08. Re-run
+Test suite — 313 tests, from `.venv/bin/pytest tests/ -q` on 2026-08-08. Re-run
 that command rather than trusting this number; it is the kind that rots:
 - `tests/test_adapter.py` — 35 tests for the versioned adapter (CONTRACT_VERSION=3, tunnel context, dynamic contract)
 - `tests/test_server_slim.py` — 16 tests for the 7 HTTP endpoints + 410 Gone handlers
@@ -191,6 +207,7 @@ that command rather than trusting this number; it is the kind that rots:
 - `tests/test_frontend_decision.py` — 12 tests for frontend deployment decisions
 - `tests/test_kg_health.py` — 28 tests for the knowledge-graph drift detector (declared predicates, read-only guarantee, exit codes)
 - `tests/test_palace_lint.py` — 41 tests for the palace linter (fragmentation exactness, skew, truncation reporting, status validation, exit codes)
+- `tests/test_benchmark_claims.py` — 5 tests pinning the `R@5` label on every mention of the 96.6% figure
 - `tests/integration/` — graceful degradation, hook timeouts, version boundaries, acceptance criteria
 - `tests/canary.py` — standalone continuous-health canary script
 
@@ -312,6 +329,11 @@ That's working as intended — the wrapper's Stop hook injects a `systemMessage`
 The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason`) — NOT `hookSpecificOutput`. If you see this error, your wrapper is outdated. Update it by copying from the plugin: `cp <plugin-path>/hooks/mempalace-hook-wrapper.sh ~/.local/bin/`.
 
 ## Changelog
+
+### v0.10.0 (2026-08-08)
+
+- **The benchmark figure always carries its metric (rawgentic#75).** 96.6% is `R@5` — retrieval recall at five, no LLM in the loop — and it reads as an accuracy figure the moment it sits beside somebody else's. Every mention in tracked markdown now states `R@5` within a few lines of the number, the new **Benchmark numbers** section at the top of this README states the rule, and `tests/test_benchmark_claims.py` pins both so the label cannot rot silently. **The audit found the debt was much smaller than the issue assumed:** this README never quoted the figure at all, no skill or hook mentions it, and the two research-doc mentions were already *criticising* the number rather than claiming it. The real gap was two sentences in the comparison doc — which the new guard found, and I had wrongly assumed were fine. Path A of the issue, done; Path B (running LongMemEval end to end and publishing the kit) is untouched and still open as an option.
+- Also corrected: this README's header claimed **v0.4.2** while the plugin was at v0.9.0.
 
 ### v0.9.0 (2026-08-08)
 

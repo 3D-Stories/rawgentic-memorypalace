@@ -58,7 +58,8 @@ per-repo scoping. It does NOT cover: durable cross-project recall, typed queries
 - Independent analysis (lhl/agentic-memory `ANALYSIS-mempalace.md`, fetched live) —
   findings that mirror our audit: *"no decay/forgetting — memories accumulate without
   recency weighting or pruning"*, *"no feedback loops"*, contradiction detection
-  *"does not exist"* despite README claims, and the headline 96.6% LongMemEval score
+  *"does not exist"* despite README claims, and the headline 96.6% **R@5** LongMemEval score
+  (retrieval recall at five — no LLM in the loop, so never an accuracy figure)
   *"actually measures ChromaDB's default embedding performance on uncompressed text —
   not MemPalace"* (AAAK-compressed: 84.2%; LoCoMo 60.3% "mediocre"). Palace graph
   builds are O(n) metadata scans.
@@ -168,7 +169,9 @@ neither in the critical path. Recorded as an explicit non-goal in the scope doc'
 ### A note on benchmark numbers
 The same system scores wildly differently across sources — mem0 is reported at 49.0%
 LongMemEval by a third-party comparison and 94.4% by its own 2026 blog; mempalace's
-96.6% turned out to measure its embedding backend. Vendor benchmark numbers are
+96.6% is **R@5** — retrieval recall at five, no LLM in the loop, so never comparable
+with an end-to-end accuracy figure — and turned out to measure its embedding
+backend. Vendor benchmark numbers are
 configuration-dependent to the point of being unusable for selection. This is why the
 scope's E3 bake-off runs on OUR data with OUR queries, and why no engine is chosen in
 this document.
