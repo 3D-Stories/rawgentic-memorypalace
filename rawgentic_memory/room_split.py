@@ -43,11 +43,16 @@ automation reads as clean is the worst outcome available here.
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import os
 import sqlite3
 import sys
 import urllib.parse
+
+# Drawers per get/update round trip. One call per drawer put a full split past
+# ten minutes and got it killed mid-write.
+BATCH_SIZE = 500
 
 SOURCE_ROOM = "documentation"
 RESIDUE_ROOM = "documentation"
@@ -306,16 +311,22 @@ def _set_rooms(palace_path: str, pairs: list[tuple[str, str]]) -> int:
     collection = get_collection(palace_path, create=False)
 
     ids = [drawer for drawer, _ in pairs]
-    duplicates = {i for i in ids if ids.count(i) > 1}
+    seen = collections.Counter(ids)
+    duplicates = [i for i, n in seen.items() if n > 1]
     if duplicates:
         raise MoveIncomplete(f"duplicate drawer ids requested: {sorted(duplicates)[:10]}")
 
-    existing = {}
-    for drawer in ids:
-        found = collection.get(ids=[drawer], include=["metadatas"])
-        metadatas = found.get("metadatas") or []
-        if metadatas:
-            existing[drawer] = dict(metadatas[0])
+    # Batched. One round trip per drawer — a get AND an update — is ~34,000 calls
+    # for a full split, which ran past ten minutes and was killed part-way. That
+    # left the palace half-migrated, which is the state every other guard here
+    # exists to prevent.
+    existing: dict[str, dict] = {}
+    for start in range(0, len(ids), BATCH_SIZE):
+        chunk = ids[start:start + BATCH_SIZE]
+        found = collection.get(ids=chunk, include=["metadatas"])
+        for drawer, meta in zip(found.get("ids") or [], found.get("metadatas") or []):
+            existing[drawer] = dict(meta)
+
     missing = [drawer for drawer in ids if drawer not in existing]
     if missing:
         raise MoveIncomplete(
@@ -324,11 +335,15 @@ def _set_rooms(palace_path: str, pairs: list[tuple[str, str]]) -> int:
         )
 
     changed = 0
-    for drawer, room in pairs:
-        updated = existing[drawer]
-        updated["room"] = room
-        collection.update(ids=[drawer], metadatas=[updated])
-        changed += 1
+    for start in range(0, len(pairs), BATCH_SIZE):
+        chunk = pairs[start:start + BATCH_SIZE]
+        metadatas = []
+        for drawer, room in chunk:
+            updated = existing[drawer]
+            updated["room"] = room
+            metadatas.append(updated)
+        collection.update(ids=[d for d, _ in chunk], metadatas=metadatas)
+        changed += len(chunk)
     if changed != len(pairs):
         raise MoveIncomplete(f"wrote {changed} of {len(pairs)} drawers")
     return changed
