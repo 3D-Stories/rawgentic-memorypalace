@@ -160,7 +160,14 @@ pip install -e ".[dev]"
 .venv/bin/python -m pytest tests/ -v
 ```
 
-Test suite (184 unit tests):
+Health check — read-only, never writes to the palace:
+
+```bash
+python -m rawgentic_memory.kg_health          # 0 clean, 1 drift, 2 could not check
+python -m rawgentic_memory.kg_health --json
+```
+
+Test suite (265 tests, measured 2026-08-08):
 - `tests/test_adapter.py` — 35 tests for the versioned adapter (CONTRACT_VERSION=3, tunnel context, dynamic contract)
 - `tests/test_server_slim.py` — 16 tests for the 7 HTTP endpoints + 410 Gone handlers
 - `tests/test_lib_sh.py` — 16 tests for bash hook helpers (smart gate, debounce, dedup)
@@ -171,6 +178,7 @@ Test suite (184 unit tests):
 - `tests/test_memory_ui_skill.py` — 16 tests for the memory-ui skill
 - `tests/test_frontend_compose.py` — 16 tests for frontend Docker Compose config
 - `tests/test_frontend_decision.py` — 12 tests for frontend deployment decisions
+- `tests/test_kg_health.py` — 26 tests for the knowledge-graph drift detector (declared predicates, read-only guarantee, exit codes)
 - `tests/integration/` — graceful degradation, hook timeouts, version boundaries, acceptance criteria
 - `tests/canary.py` — standalone continuous-health canary script
 
@@ -292,6 +300,10 @@ That's working as intended — the wrapper's Stop hook injects a `systemMessage`
 The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason`) — NOT `hookSpecificOutput`. If you see this error, your wrapper is outdated. Update it by copying from the plugin: `cp <plugin-path>/hooks/mempalace-hook-wrapper.sh ~/.local/bin/`.
 
 ## Changelog
+
+### v0.8.0 (2026-08-08)
+
+- **Knowledge-graph drift detector (rawgentic#72).** `python -m rawgentic_memory.kg_health [--db PATH] [--json]` reports every `(subject, predicate)` holding more than one CURRENT value — the state a single-valued fact must never be in. Exit `0` clean, `1` drift on a declared single-valued predicate, `2` could not check (an absent or unreadable database must never read as clean). `SINGLE_VALUED_PREDICATES` is declared data, so the set can be read and extended in one place; drift on an undeclared predicate is reported but never fails the check. Read-only by construction, and the database path is percent-encoded before it becomes a URI so a path carrying `?mode=rwc` cannot turn the check into a writer. **First live run: 291 entities, 160 triples, 158 current, 2 expired, 144 distinct predicates, zero drift.** What did NOT ship is the refusing constraint the issue also asked for: the store is the upstream third-party `mempalace` package (pinned `>=3.3.5,<4.0`), and this server already returns 410 Gone on `/kg/*`, so every knowledge-graph write goes to upstream and never touches this code. That guard belongs upstream — see #72.
 
 ### v0.7.0 (2026-07-22)
 
