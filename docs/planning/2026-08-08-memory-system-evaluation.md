@@ -217,10 +217,93 @@ that MemPalace's capture is worth keeping, its retrieval and hygiene are worth a
 the two augmentations that matter most (txtai for retrieval, a consolidation job for thoughts)
 are small, separable, and testable against criteria we now have in writing.**
 
+## Milestones and issues — appended 2026-08-08 night, for the morning review
+
+C0 is decomposed and **filed** (owner-approved): epic #91 plus five children. C1–C4 are
+decomposed below but deliberately **not filed** — filing the remaining ~21 issues awaits the
+morning review, per combination: file as-is, edit, or hold. A backlog written unreviewed by the
+run that drafted it is what the issue throttle exists to prevent. Implementation of everything
+on this page stays owner-gated.
+
+### C0 — filed as epic [#91](https://github.com/3D-Stories/rawgentic-memorypalace/issues/91)
+
+| Issue | Child | Criterion |
+| --- | --- | --- |
+| [#86](https://github.com/3D-Stories/rawgentic-memorypalace/issues/86) | feat(recall): exclude the archive room from default recall, with an explicit include option | 4 staleness, ~1→✓2 |
+| [#87](https://github.com/3D-Stories/rawgentic-memorypalace/issues/87) | feat(lint): corpus-wide duplicate-content lint | 6 dedup, ~1→✓2 |
+| [#90](https://github.com/3D-Stories/rawgentic-memorypalace/issues/90) | feat(lifecycle): archive-by-policy — **depends on #86** | 7 lifecycle, ✗0→✓2 |
+| [#88](https://github.com/3D-Stories/rawgentic-memorypalace/issues/88) | feat(tooling): honest counts, reconciled against the store | 8 honest tooling, ~1→✓2 |
+| [#89](https://github.com/3D-Stories/rawgentic-memorypalace/issues/89) | feat(kg): closed predicate vocabulary with write-time rejection | 10 vocabulary, ~1→✓2 |
+
+29 + 3 + 2 + 4 + 2 + 1 = 41 — the C0 column, reproduced exactly. The consolidation cron in
+C0's column is excluded on purpose: it adds no points to C0's own score, and consolidation is
+piloted as C3, so it is not built twice.
+
+### C1 — txtai shadow index (draft, not filed)
+
+Capture stays authoritative; txtai sees every event through an idempotent replay; reads cut
+over only on evidence. Effort S · one new service · fully reversible — stop the dual-write and
+delete the shadow, MemPalace untouched.
+
+| # | Child | Depends |
+| --- | --- | --- |
+| C1.1 | feat(shadow): durable write-event queue + dual-write — every drawer write appends an event (drawer id + content hash); a backfill mode enqueues the existing ~22k drawers | — |
+| C1.2 | feat(shadow): txtai service + idempotent replayer — hybrid sparse+dense, SQL metadata filters (project, room, filed_at); local bind only; a killed replay re-runs to convergence with zero duplicates | C1.1 |
+| C1.3 | feat(shadow): side-by-side comparison harness — the fixed 20-query set plus a retrieval-quality set against BOTH engines, one command, report into docs/measurements | C1.2 |
+| C1.4 | feat(shadow): MCP read surface for the shadow — required by the criterion-1 test, which runs over MCP on both engines | C1.2 |
+
+### The criterion-1 test — between C1 and C3, and it decides the read path
+
+Ten task questions whose answers live in memory, asked by a FRESH agent over MCP, two model
+families, fixed token budget. Pass = the right memory in ≤2 calls for 8 of 10. It runs against
+MemPalace AND the C1 shadow. This measurement has never existed; it, not taste, picks the
+default read path.
+
+### C3 — consolidation pilot into Basic Memory (draft, not filed)
+
+A scheduled agent job reads recent drawers and writes cited synthesis notes as markdown;
+Obsidian's graph arrives free, because wikilinks are the native grammar. Raw recall stays in
+MemPalace. Effort M · one MCP server + a cron job.
+
+| # | Child | Depends |
+| --- | --- | --- |
+| C3.1 | infra: Basic Memory local install + a palace-notes home — notes directory, MCP registration, index-rebuilds-from-markdown proven | — |
+| C3.2 | feat(consolidate): the consolidation job — cluster related drawers, write synthesis notes citing drawer ids; criterion 9's seed-5 test is the acceptance test | C3.1 |
+| C3.3 | feat(consolidate): topic recall surfaces the synthesis above its fragments — the criterion's second half; the surface is chosen in design | C3.2 |
+| C3.4 | ops: durable cron wiring + honest run records (drawers read, notes written, citation counts) | C3.2 |
+
+### C2 — Graphiti layer (draft, not filed; not a recommended standalone step)
+
+C2 standalone scores below C0 and C3, and it appears in the recommendation only inside C4. It
+is drafted so the shape is on record; entering it is an evidence decision after the criterion-1
+test. Effort L · FalkorDB + a local LLM runtime + an extraction pipeline that must be
+quality-monitored, or it rebuilds the vestigial-graph failure with more infrastructure.
+
+| # | Child | Depends |
+| --- | --- | --- |
+| C2.1 | infra: FalkorDB + Graphiti on a LOCAL OpenAI-compatible endpoint — end-to-end episode→graph with zero outbound packets | — |
+| C2.2 | feat(graph): async episode feed off the capture path (reuses C1's queue if built); capture latency measurably unchanged | C2.1 |
+| C2.3 | feat(graph): extraction-quality monitor — sampled precision + coverage lint, with a threshold alert | C2.2 |
+| C2.4 | feat(graph): bi-temporal as-of query surface over MCP | C2.1 |
+
+### C4 — the event-sourced stack (draft, not filed; evidence-gated)
+
+The journal is the point of no cheap return — enter it measured, not hopeful. Only after C1,
+the criterion-1 test, and the C3 pilot prove their seams. Effort XL.
+
+| # | Child | Depends |
+| --- | --- | --- |
+| C4.1 | design: the event-journal ADR — format, schema, fsync and crash semantics, replay contract; cross-model review (WF5) BEFORE any code | — |
+| C4.2 | feat(journal): hooks append to the journal first; MemPalace becomes consumer #1 via idempotent replay — criterion 2's kill-the-writer test finally becomes passable | C4.1 |
+| C4.3 | feat(journal): consumer framework — offsets, lag metrics, rebuild-from-zero; criterion 11's wipe-and-rebuild test | C4.2 |
+| C4.4 | feat(journal): txtai and Graphiti become journal consumers (ports C1 and C2) | C4.3 |
+| C4.5 | feat(journal): policy worker — the archive policy and dedup run as journal-driven jobs | C4.3 |
+
 ```provenance
 source | docs/planning/2026-08-08-memory-system-evaluation.md
 criteria authors | claude-fable-5, gpt-5.6-sol, qwen3.8-max — independent lists, merged; consumer criteria added by the owner
 baseline measured | 2026-08-08, this host, post-#77 split
 product facts | fetched live from each repository 2026-08-08
 epic | #71 (closed); consults follow rawgentic WF13 shape
+milestones | appended 2026-08-08 night — C0 filed as epic #91 (children #86–#90); C1–C4 drafted, filing deferred to the morning review
 ```

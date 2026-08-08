@@ -233,14 +233,14 @@ color:var(--ink)}
 <body class="tpl-analysis">
 <div class="wrap">
 <header>
-<div class="eyebrow">design artifact · updated 2026-08-08 01:38 MDT</div>
+<div class="eyebrow">design artifact · updated 2026-08-08 02:04 MDT</div>
 <h1>Memory-system evaluation — 12 criteria, 10 candidates, 5 combinations</h1>
 
 </header>
 <main>
 <p><strong>The answer in one line: no single product beats what we have — but two combinations do, and the highest-scoring path keeps MemPalace as the capture layer and builds around it.</strong> MemPalace as it stands today scores 29 of 50 and is the measured baseline. The best single product (Graphiti, 30) beats it by one point on paper. The pragmatic winners are combinations: harden-MemPalace (41) and MemPalace-plus-txtai-shadow (36) are buildable this month, and the full event-sourced stack (47) is the ceiling if the seams prove themselves.</p>
 <div class="blk blk-verdict"><div class="blk-row is-ship"><span class="blk-key">ship</span><span class="blk-text">Run the txtai shadow index (C1) and the hygiene hardening (C0) now — together they cover 10 of 12 criteria and neither touches the capture path.</span></div><div class="blk-row is-risk"><span class="blk-key">risk</span><span class="blk-text">Every combination score is a DESIGN grade — nothing but the baseline has been measured on this host.</span></div><div class="blk-row is-risk"><span class="blk-key">risk</span><span class="blk-text">The criteria deliberately omit two axes that matter: build effort and upstream governance. They are reported beside the scores, never inside them.</span></div></div>
-<nav class="an-index"><ol><li><a href="#s1">Where these criteria came from</a></li><li><a href="#s2">The 12 criteria</a></li><li><a href="#s3">Three evidence classes — read every grade through this</a></li><li><a href="#s4">Baseline: MemPalace 3.6.0 as it stands — 29/50, all grades Measured</a></li><li><a href="#s5">Single products</a></li><li><a href="#s6">Combinations — all grades Design</a></li><li><a href="#s7">Recommendation</a></li></ol></nav>
+<nav class="an-index"><ol><li><a href="#s1">Where these criteria came from</a></li><li><a href="#s2">The 12 criteria</a></li><li><a href="#s3">Three evidence classes — read every grade through this</a></li><li><a href="#s4">Baseline: MemPalace 3.6.0 as it stands — 29/50, all grades Measured</a></li><li><a href="#s5">Single products</a></li><li><a href="#s6">Combinations — all grades Design</a></li><li><a href="#s7">Recommendation</a></li><li><a href="#s8">Milestones and issues — appended 2026-08-08 night, for the morning review</a></li></ol></nav>
 <section class="an-q" id="s1"><h3>Where these criteria came from <span class="chip c-measured an-conf">MEASURED</span></h3><p class="an-answer">Three lists were written independently on 2026-08-08 — one by this session, one by GPT-5.6 (Sol), one by qwen3.8-max — from the same facts and failure history, with none seeing another&#x27;s list. Five themes appeared in all three. The owner then added the three consumer-side criteria the machinery-focused lists had missed: agent usability, data hygiene (dedup + lifecycle), and consolidation. The merged set is 12 criteria in three ranked tiers.</p>
 <p>Every tier-1 and tier-2 criterion traces to a failure measured in this workspace this month — none is speculative.</p></section>
 <section class="an-q" id="s2"><h3>The 12 criteria <span class="chip c-inferred an-conf">UNVERIFIED</span></h3><h3>Tier 1 — usefulness gates (weight ×3). Fail one, the system is out</h3>
@@ -377,11 +377,71 @@ fully in place; C4 retires it. A score that blended these in would hide the trad
 presenting it.</p></div></div></section>
 <section class="an-q" id="s7"><h3>Recommendation <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">Sequence, not a single pick. Each step is independently valuable and independently reversible.</p>
 <div class="blk blk-steps an-figure"><ol><li class="blk-step"><span class="blk-n">1</span><span class="blk-title">Ship C0&#x27;s hygiene pieces</span><span class="blk-text">Dedup lint, archive policy, honest-count checks. Ours, tested, no new services. Lifts the baseline to ~35 regardless of what else happens.</span></li><li class="blk-step"><span class="blk-n">2</span><span class="blk-title">Stand up C1&#x27;s txtai shadow</span><span class="blk-text">Dual-write behind an idempotent queue; MemPalace stays authoritative. Days of work, fully reversible.</span></li><li class="blk-step"><span class="blk-n">3</span><span class="blk-title">Run the criterion-1 test on both</span><span class="blk-text">Ten questions, fresh agent, two model families, over MCP. This is the measurement that has never existed — it decides the read path.</span></li><li class="blk-step"><span class="blk-n">4</span><span class="blk-title">Pilot C3&#x27;s consolidation cron</span><span class="blk-text">One scheduled agent job writing cited synthesis notes into Basic Memory markdown. First real test of criterion 9, and the Obsidian graph arrives with it.</span></li><li class="blk-step"><span class="blk-n">5</span><span class="blk-title">Decide on C4 with evidence</span><span class="blk-text">Only if steps 2–4 prove their seams. The journal is the point of no cheap return — enter it measured, not hopeful.</span></li></ol></div>
-<p>The honest bottom line: <strong>the evaluation did not find a product to replace MemPalace. It found that MemPalace&#x27;s capture is worth keeping, its retrieval and hygiene are worth augmenting, and the two augmentations that matter most (txtai for retrieval, a consolidation job for thoughts) are small, separable, and testable against criteria we now have in writing.</strong></p>
-<div class="blk blk-provenance"><dl><dt>source</dt><dd>docs/planning/2026-08-08-memory-system-evaluation.md</dd><dt>criteria authors</dt><dd>claude-fable-5, gpt-5.6-sol, qwen3.8-max — independent lists, merged; consumer criteria added by the owner</dd><dt>baseline measured</dt><dd>2026-08-08, this host, post-#77 split</dd><dt>product facts</dt><dd>fetched live from each repository 2026-08-08</dd><dt>epic</dt><dd>#71 (closed); consults follow rawgentic WF13 shape</dd></dl></div></section>
+<p>The honest bottom line: <strong>the evaluation did not find a product to replace MemPalace. It found that MemPalace&#x27;s capture is worth keeping, its retrieval and hygiene are worth augmenting, and the two augmentations that matter most (txtai for retrieval, a consolidation job for thoughts) are small, separable, and testable against criteria we now have in writing.</strong></p></section>
+<section class="an-q" id="s8"><h3>Milestones and issues — appended 2026-08-08 night, for the morning review <span class="chip c-measured an-conf">MEASURED</span></h3><p class="an-answer">C0 is decomposed and <strong>filed</strong> (owner-approved): epic #91 plus five children. C1–C4 are decomposed below but deliberately <strong>not filed</strong> — filing the remaining ~21 issues awaits the morning review, per combination: file as-is, edit, or hold. A backlog written unreviewed by the run that drafted it is what the issue throttle exists to prevent. Implementation of everything on this page stays owner-gated.</p>
+<h3>C0 — filed as epic <a href="https://github.com/3D-Stories/rawgentic-memorypalace/issues/91">#91</a></h3>
+<table>
+<thead><tr><th>Issue</th><th>Child</th><th>Criterion</th></tr></thead>
+<tbody>
+<tr><td><a href="https://github.com/3D-Stories/rawgentic-memorypalace/issues/86">#86</a></td><td>feat(recall): exclude the archive room from default recall, with an explicit include option</td><td>4 staleness, ~1→✓2</td></tr>
+<tr><td><a href="https://github.com/3D-Stories/rawgentic-memorypalace/issues/87">#87</a></td><td>feat(lint): corpus-wide duplicate-content lint</td><td>6 dedup, ~1→✓2</td></tr>
+<tr><td><a href="https://github.com/3D-Stories/rawgentic-memorypalace/issues/90">#90</a></td><td>feat(lifecycle): archive-by-policy — <strong>depends on #86</strong></td><td>7 lifecycle, ✗0→✓2</td></tr>
+<tr><td><a href="https://github.com/3D-Stories/rawgentic-memorypalace/issues/88">#88</a></td><td>feat(tooling): honest counts, reconciled against the store</td><td>8 honest tooling, ~1→✓2</td></tr>
+<tr><td><a href="https://github.com/3D-Stories/rawgentic-memorypalace/issues/89">#89</a></td><td>feat(kg): closed predicate vocabulary with write-time rejection</td><td>10 vocabulary, ~1→✓2</td></tr>
+</tbody>
+</table>
+<p>29 + 3 + 2 + 4 + 2 + 1 = 41 — the C0 column, reproduced exactly. The consolidation cron in C0&#x27;s column is excluded on purpose: it adds no points to C0&#x27;s own score, and consolidation is piloted as C3, so it is not built twice.</p>
+<h3>C1 — txtai shadow index (draft, not filed)</h3>
+<p>Capture stays authoritative; txtai sees every event through an idempotent replay; reads cut over only on evidence. Effort S · one new service · fully reversible — stop the dual-write and delete the shadow, MemPalace untouched.</p>
+<table>
+<thead><tr><th>#</th><th>Child</th><th>Depends</th></tr></thead>
+<tbody>
+<tr><td>C1.1</td><td>feat(shadow): durable write-event queue + dual-write — every drawer write appends an event (drawer id + content hash); a backfill mode enqueues the existing ~22k drawers</td><td>—</td></tr>
+<tr><td>C1.2</td><td>feat(shadow): txtai service + idempotent replayer — hybrid sparse+dense, SQL metadata filters (project, room, filed_at); local bind only; a killed replay re-runs to convergence with zero duplicates</td><td>C1.1</td></tr>
+<tr><td>C1.3</td><td>feat(shadow): side-by-side comparison harness — the fixed 20-query set plus a retrieval-quality set against BOTH engines, one command, report into docs/measurements</td><td>C1.2</td></tr>
+<tr><td>C1.4</td><td>feat(shadow): MCP read surface for the shadow — required by the criterion-1 test, which runs over MCP on both engines</td><td>C1.2</td></tr>
+</tbody>
+</table>
+<h3>The criterion-1 test — between C1 and C3, and it decides the read path</h3>
+<p>Ten task questions whose answers live in memory, asked by a FRESH agent over MCP, two model families, fixed token budget. Pass = the right memory in ≤2 calls for 8 of 10. It runs against MemPalace AND the C1 shadow. This measurement has never existed; it, not taste, picks the default read path.</p>
+<h3>C3 — consolidation pilot into Basic Memory (draft, not filed)</h3>
+<p>A scheduled agent job reads recent drawers and writes cited synthesis notes as markdown; Obsidian&#x27;s graph arrives free, because wikilinks are the native grammar. Raw recall stays in MemPalace. Effort M · one MCP server + a cron job.</p>
+<table>
+<thead><tr><th>#</th><th>Child</th><th>Depends</th></tr></thead>
+<tbody>
+<tr><td>C3.1</td><td>infra: Basic Memory local install + a palace-notes home — notes directory, MCP registration, index-rebuilds-from-markdown proven</td><td>—</td></tr>
+<tr><td>C3.2</td><td>feat(consolidate): the consolidation job — cluster related drawers, write synthesis notes citing drawer ids; criterion 9&#x27;s seed-5 test is the acceptance test</td><td>C3.1</td></tr>
+<tr><td>C3.3</td><td>feat(consolidate): topic recall surfaces the synthesis above its fragments — the criterion&#x27;s second half; the surface is chosen in design</td><td>C3.2</td></tr>
+<tr><td>C3.4</td><td>ops: durable cron wiring + honest run records (drawers read, notes written, citation counts)</td><td>C3.2</td></tr>
+</tbody>
+</table>
+<h3>C2 — Graphiti layer (draft, not filed; not a recommended standalone step)</h3>
+<p>C2 standalone scores below C0 and C3, and it appears in the recommendation only inside C4. It is drafted so the shape is on record; entering it is an evidence decision after the criterion-1 test. Effort L · FalkorDB + a local LLM runtime + an extraction pipeline that must be quality-monitored, or it rebuilds the vestigial-graph failure with more infrastructure.</p>
+<table>
+<thead><tr><th>#</th><th>Child</th><th>Depends</th></tr></thead>
+<tbody>
+<tr><td>C2.1</td><td>infra: FalkorDB + Graphiti on a LOCAL OpenAI-compatible endpoint — end-to-end episode→graph with zero outbound packets</td><td>—</td></tr>
+<tr><td>C2.2</td><td>feat(graph): async episode feed off the capture path (reuses C1&#x27;s queue if built); capture latency measurably unchanged</td><td>C2.1</td></tr>
+<tr><td>C2.3</td><td>feat(graph): extraction-quality monitor — sampled precision + coverage lint, with a threshold alert</td><td>C2.2</td></tr>
+<tr><td>C2.4</td><td>feat(graph): bi-temporal as-of query surface over MCP</td><td>C2.1</td></tr>
+</tbody>
+</table>
+<h3>C4 — the event-sourced stack (draft, not filed; evidence-gated)</h3>
+<p>The journal is the point of no cheap return — enter it measured, not hopeful. Only after C1, the criterion-1 test, and the C3 pilot prove their seams. Effort XL.</p>
+<table>
+<thead><tr><th>#</th><th>Child</th><th>Depends</th></tr></thead>
+<tbody>
+<tr><td>C4.1</td><td>design: the event-journal ADR — format, schema, fsync and crash semantics, replay contract; cross-model review (WF5) BEFORE any code</td><td>—</td></tr>
+<tr><td>C4.2</td><td>feat(journal): hooks append to the journal first; MemPalace becomes consumer #1 via idempotent replay — criterion 2&#x27;s kill-the-writer test finally becomes passable</td><td>C4.1</td></tr>
+<tr><td>C4.3</td><td>feat(journal): consumer framework — offsets, lag metrics, rebuild-from-zero; criterion 11&#x27;s wipe-and-rebuild test</td><td>C4.2</td></tr>
+<tr><td>C4.4</td><td>feat(journal): txtai and Graphiti become journal consumers (ports C1 and C2)</td><td>C4.3</td></tr>
+<tr><td>C4.5</td><td>feat(journal): policy worker — the archive policy and dedup run as journal-driven jobs</td><td>C4.3</td></tr>
+</tbody>
+</table>
+<div class="blk blk-provenance"><dl><dt>source</dt><dd>docs/planning/2026-08-08-memory-system-evaluation.md</dd><dt>criteria authors</dt><dd>claude-fable-5, gpt-5.6-sol, qwen3.8-max — independent lists, merged; consumer criteria added by the owner</dd><dt>baseline measured</dt><dd>2026-08-08, this host, post-#77 split</dd><dt>product facts</dt><dd>fetched live from each repository 2026-08-08</dd><dt>epic</dt><dd>#71 (closed); consults follow rawgentic WF13 shape</dd><dt>milestones</dt><dd>appended 2026-08-08 night — C0 filed as epic #91 (children #86–#90); C1–C4 drafted, filing deferred to the morning review</dd></dl></div></section>
 
 </main>
-<footer>Last updated: 2026-08-08 01:38 MDT · generated by design-doc-publish — self-contained, no external resources.</footer>
+<footer>Last updated: 2026-08-08 02:04 MDT · generated by design-doc-publish — self-contained, no external resources.</footer>
 </div>
 </body>
 </html>
