@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="design-doc-publish">
+<title>#74 What writes to the documentation room</title>
+<style>
+:root{--bg:#12181c;--surface:#1a2228;--ink:#e7edf0;--ink-2:#a8b6bd;--ink-3:#76858f;
+--line:#2a353c;--accent:#2dd4bf;--code:#232d34}
+:root[data-theme=dark]{--bg:#12181c;--surface:#1a2228;--ink:#e7edf0;--ink-2:#a8b6bd;
+--ink-3:#76858f;--line:#2a353c;--accent:#2dd4bf;--code:#232d34}
+:root[data-theme=light]{--bg:#f6f7f8;--surface:#fff;--ink:#1a2126;--ink-2:#4b5a63;
+--ink-3:#667279;--line:#dde3e6;--accent:#0f766e;--code:#eef1f3}
+@media print{:root,:root[data-theme=dark]{--bg:#f6f7f8;--surface:#fff;--ink:#1a2126;
+--ink-2:#4b5a63;--ink-3:#667279;--line:#dde3e6;--accent:#0f766e;--code:#eef1f3}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+font:15px/1.6 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:900px;margin:0 auto;padding:0 20px 72px}
+header{padding:40px 0 18px;border-bottom:1px solid var(--line);margin-bottom:20px}
+.eyebrow{color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+h1{font-size:clamp(22px,4vw,30px);margin:.3em 0;font-weight:750;letter-spacing:-.02em}
+h2{font-size:19px;font-weight:700;margin:1.4em 0 .4em}
+h3{font-size:16px;font-weight:650;margin:1.2em 0 .3em}
+p,li{color:var(--ink-2)}
+code{background:var(--code);border-radius:4px;padding:1px 5px;font:12.5px/1.4 ui-monospace,Menlo,Consolas,monospace}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto}
+pre code{background:none;padding:0}
+blockquote{border-left:3px solid var(--accent);margin:.6em 0;padding:.2em 0 .2em 14px;color:var(--ink-3)}
+table{border-collapse:collapse;width:100%;margin:.6em 0;font-size:13.5px}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.telemetry th{white-space:nowrap;color:var(--ink-3);width:1%}
+.telemetry-section{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px 18px 14px;margin-top:24px}
+footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--ink-3);font-size:12.5px}
+
+:root{--sev-crit:#f87171;--sev-crit-bg:#3b1717;--sev-high:#fb923c;--sev-high-bg:#3a2410;--sev-med:#fbbf24;--sev-med-bg:#302a14;--sev-low:#a8b6bd;--sev-low-bg:#232d34;--req-c:#2dd4bf;--req-c-bg:#123531}
+:root[data-theme=dark]{--sev-crit:#f87171;--sev-crit-bg:#3b1717;--sev-high:#fb923c;--sev-high-bg:#3a2410;--sev-med:#fbbf24;--sev-med-bg:#302a14;--sev-low:#a8b6bd;--sev-low-bg:#232d34;--req-c:#2dd4bf;--req-c-bg:#123531}
+:root[data-theme=light]{--sev-crit:#b91c1c;--sev-crit-bg:#fdecec;--sev-high:#c2410c;--sev-high-bg:#fdeee2;--sev-med:#955a06;--sev-med-bg:#f8f2e2;--sev-low:#4b5a63;--sev-low-bg:#eef1f3;--req-c:#0f766e;--req-c-bg:#e6f2f0}
+@media print{:root,:root[data-theme=dark]{--sev-crit:#b91c1c;--sev-crit-bg:#fdecec;--sev-high:#c2410c;--sev-high-bg:#fdeee2;--sev-med:#955a06;--sev-med-bg:#f8f2e2;--sev-low:#4b5a63;--sev-low-bg:#eef1f3;--req-c:#0f766e;--req-c-bg:#e6f2f0}}
+.score{font:11.5px/1.4 ui-monospace,Menlo,Consolas,monospace;font-weight:700;background:var(--code);color:var(--accent);border-radius:5px;padding:1px 6px}
+.sev{font-size:11px;font-weight:700;letter-spacing:.03em;padding:1px 7px;border-radius:999px;text-transform:uppercase;white-space:nowrap}
+.sev-critical{color:var(--sev-crit);background:var(--sev-crit-bg)}
+.sev-high{color:var(--sev-high);background:var(--sev-high-bg)}
+.sev-medium{color:var(--sev-med);background:var(--sev-med-bg)}
+.sev-low{color:var(--sev-low);background:var(--sev-low-bg)}
+.req{font-size:11px;font-weight:700;letter-spacing:.03em;padding:1px 6px;border-radius:5px;color:var(--req-c);background:var(--req-c-bg)}
+.req-must-not,.req-should-not{color:var(--sev-crit);background:var(--sev-crit-bg)}
+.req-may{color:var(--ink-3);background:var(--code)}
+
+:root{--accent-soft:color-mix(in srgb,var(--accent) 12%,transparent)}
+.blk{margin:14px 0}
+.blk-stats{display:flex;flex-wrap:wrap;gap:10px}
+.blk-stats .blk-item{flex:1 1 130px;background:var(--surface);border:1px solid var(--line);
+border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.blk-stats .blk-value{font-size:22px;font-weight:750;letter-spacing:-.02em;color:var(--ink)}
+.blk-stats .is-accent .blk-value{color:var(--accent)}
+.blk-stats .blk-label{font:11px/1.3 ui-monospace,Menlo,Consolas,monospace;
+letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.blk-bar{display:block;height:4px;border-radius:999px;background:var(--code);margin-top:6px}
+.blk-bar .blk-fill{display:block;height:100%;border-radius:999px;background:var(--accent)}
+.blk-verdict .blk-row{display:flex;gap:10px;align-items:baseline;padding:8px 0;
+border-bottom:1px solid var(--line)}
+.blk-verdict .blk-row:last-child{border-bottom:0}
+.blk-verdict .blk-key{font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;font-weight:700;
+letter-spacing:.06em;text-transform:uppercase;color:var(--accent);flex:0 0 auto;min-width:64px}
+.blk-verdict .blk-text{color:var(--ink);font-size:16px;font-weight:600}
+.blk-chips{display:flex;flex-wrap:wrap;gap:6px}
+.blk-chip{font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 9px;
+border-radius:999px;text-transform:uppercase;white-space:nowrap;
+color:var(--ink-2);background:var(--code);border:1px solid var(--line)}
+.blk-chip.is-done,.blk-chip.is-shipped,.blk-chip.is-merged{color:var(--req-c);
+background:var(--req-c-bg);border-color:transparent}
+.blk-chip.is-wip,.blk-chip.is-pending{color:var(--sev-med);background:var(--sev-med-bg);
+border-color:transparent}
+.blk-chip.is-blocked,.blk-chip.is-failed{color:var(--sev-crit);background:var(--sev-crit-bg);
+border-color:transparent}
+.blk-callout>.blk-callout{border-left:3px solid var(--ink-3);background:var(--code);
+border-radius:0 8px 8px 0;padding:10px 14px}
+.blk-callout .blk-title{font-weight:700;color:var(--ink);margin-bottom:.2em}
+.blk-callout p{margin:0;color:var(--ink-2)}
+.blk-callout .is-warn,.blk-callout .is-high{border-left-color:var(--sev-high);
+background:var(--sev-high-bg)}
+.blk-callout .is-stop,.blk-callout .is-critical{border-left-color:var(--sev-crit);
+background:var(--sev-crit-bg)}
+.blk-callout .is-note,.blk-callout .is-info{border-left-color:var(--accent)}
+.blk-legend dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0}
+.blk-legend dt{font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;font-weight:700;
+letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);
+border-left:3px solid var(--ink-3);padding-left:8px}
+.blk-legend dt.is-done{border-left-color:var(--req-c)}
+.blk-legend dt.is-blocked{border-left-color:var(--sev-crit)}
+.blk-legend dt.is-solid{border-left-color:var(--accent)}
+.blk-legend dd{margin:0;color:var(--ink-2);font-size:13.5px}
+.blk-meter{display:grid;grid-template-columns:1fr auto;gap:2px 12px;margin:8px 0}
+.blk-meter .blk-label{color:var(--ink-2);font-size:13.5px}
+.blk-meter .blk-value{font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--ink-3)}
+.blk-meter .blk-track{grid-column:1/-1;height:6px;border-radius:999px;background:var(--code);
+overflow:hidden}
+.blk-meter .blk-fill{display:block;height:100%;background:var(--accent)}
+.blk-meter.is-accent .blk-fill{background:var(--accent)}
+.blk-findings .blk-finding{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;
+padding:10px 0;border-bottom:1px solid var(--line)}
+.blk-findings .blk-finding:last-child{border-bottom:0}
+.blk-sev{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+padding:2px 7px;border-radius:999px;white-space:nowrap;align-self:start;
+color:var(--sev-low);background:var(--sev-low-bg)}
+.is-critical>.blk-sev{color:var(--sev-crit);background:var(--sev-crit-bg)}
+.is-high>.blk-sev{color:var(--sev-high);background:var(--sev-high-bg)}
+.is-medium>.blk-sev{color:var(--sev-med);background:var(--sev-med-bg)}
+.blk-findings .blk-title{font-weight:650;color:var(--ink)}
+.blk-findings .blk-text{grid-column:2;color:var(--ink-2);font-size:13.5px}
+.blk-prov{grid-column:2;font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;
+color:var(--ink-3)}
+.blk-steps ol,.blk-steps{margin:0;padding:0;list-style:none}
+.blk-step{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;padding:9px 0;
+border-bottom:1px solid var(--line)}
+.blk-step:last-child{border-bottom:0}
+.blk-step .blk-n{font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;font-weight:700;
+color:var(--accent);align-self:start}
+.blk-step .blk-title{font-weight:650;color:var(--ink)}
+.blk-step .blk-text{grid-column:2;color:var(--ink-2);font-size:13.5px}
+.blk-nodes ul{list-style:none;margin:0;padding:0}
+.blk-nodes ul ul{margin-left:18px;padding-left:14px;border-left:1px solid var(--line)}
+.blk-node{background:var(--surface);border:1px solid var(--line);border-radius:8px;
+padding:7px 11px;margin:6px 0;display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}
+/* A child list lives INSIDE its parent <li>, so on a flex parent it becomes a flex
+   SIBLING of the label and renders beside it instead of beneath. Found by looking at a
+   rendered three-level tree, not by reading the markup. */
+.blk-node>ul{flex-basis:100%;margin-top:6px}
+/* Two roots in ONE nodes block are a before/after pair; a template opts in by
+   gridding this top-level list. Two separate fences cannot pair — each is its
+   own wrapper with a single child. */
+.blk-nodes>ul{display:grid;gap:0 16px}
+.blk-node .blk-label{font-weight:650;color:var(--ink)}
+.blk-node .blk-text{color:var(--ink-3);font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace}
+.blk-edge{flex-basis:100%;font:10.5px/1.4 ui-monospace,Menlo,Consolas,monospace;
+letter-spacing:.05em;text-transform:uppercase;color:var(--accent)}
+.blk-edge.is-proposed{color:var(--ink-3);border-bottom:1px dashed var(--ink-3);
+align-self:start;display:inline-block;flex-basis:auto}
+.blk-provenance dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;
+font-size:13px}
+.blk-provenance dt{font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;font-weight:700;
+letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
+.blk-provenance dd{margin:0;color:var(--ink-2)}
+
+body.tpl-analysis{background:radial-gradient(1100px 560px at 82% -12%,#1a243f 0%,transparent 60%),radial-gradient(900px 500px at -12% 8%,#17203a 0%,transparent 55%),var(--bg)}
+.tpl-analysis .wrap{max-width:880px;padding:0 24px 96px}
+.tpl-analysis header{padding:48px 0 10px;border-bottom:none;margin-bottom:26px}
+.tpl-analysis h1{font-size:clamp(28px,5vw,42px)}
+.tpl-analysis h2{font-size:22px;margin:40px 0 14px}
+
+/* #76 — the frame's companions. The FRAME slots above own ground, measure and type scale; these
+   are the treatments that only make sense once those exist.
+
+   THE EYEBROW, as the reference has it: an inline-block pill in accent over a tint of itself,
+   not a bare line of small caps. `--req-c-bg` rather than a new value — it is the accent hue's
+   own tint, already in the token layer and already contrast-scored there. */
+.tpl-analysis header .eyebrow{display:inline-block;color:var(--accent);
+background:var(--req-c-bg);border:1px solid var(--line);border-radius:999px;padding:5px 13px;
+font-size:11.5px;letter-spacing:.14em}
+/* The headline gets the reference's tight leading and a measure of its own: a display line that
+   runs the full 880px reads as a paragraph, not a title. */
+.tpl-analysis h1{line-height:1.12;max-width:20ch}
+/* The lede — the reference's `.lead`. This type's first-read element is the headline ANSWER, and
+   the subtitle is where it lands. */
+.tpl-analysis header .sub{font-size:17.5px;line-height:1.6;color:var(--ink-2);max-width:62ch}
+.tpl-analysis .an-index{background:var(--surface);border:1px solid var(--line);
+border-radius:12px;padding:10px 18px;margin:18px 0}
+.tpl-analysis .an-index ol{margin:.2em 0;padding-left:1.2em}
+.tpl-analysis .an-index li{margin:.25em 0}
+.tpl-analysis .an-index a{color:var(--ink-2);text-decoration:none;border-bottom:1px solid var(--line)}
+.tpl-analysis .an-index a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+.tpl-analysis .an-q{border-top:1px solid var(--line);padding-top:14px;margin-top:24px}
+/* #76/D70: the reference's 22px section scale and 40px rhythm, applied where the page can
+   actually read them. The FRAME's h2 slots cannot reach a sectioned style. */
+.tpl-analysis .an-q>h3{font-size:22px;margin:40px 0 14px}
+.tpl-analysis .an-q h3{font-size:17px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.tpl-analysis .an-answer{font-size:16.5px;line-height:1.55;color:var(--ink);font-weight:550;
+border-left:3px solid var(--accent);padding-left:14px;margin:.5em 0 .9em}
+/* The base .chip shape lives in _ROADMAP_STYLE, which only roadmap and
+   dashboard inject — so an analysis chip needs its own shape, not just a
+   colour, or it renders as tight coloured text. */
+.tpl-analysis .an-conf{font:10.5px/1.4 ui-monospace,Menlo,Consolas,monospace;
+font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:999px;
+text-transform:uppercase;white-space:nowrap}
+.tpl-analysis .c-measured{color:var(--req-c);background:var(--req-c-bg)}
+.tpl-analysis .c-confirmed{color:var(--req-c);background:var(--req-c-bg)}
+.tpl-analysis .c-inferred{color:var(--sev-med);background:var(--sev-med-bg)}
+.tpl-analysis .c-unstated{color:var(--ink-3);background:var(--code)}
+/* Stepped figure — the reference's `<ol class="steps">`: the number is the quiet index, the lead
+   sentence carries the weight, and the detail drops to the note voice underneath it. Static, so
+   there is nothing to open; see the docstring for why this is `steps` and not `steprail`. */
+.tpl-analysis .an-figure{background:var(--surface);border:1px solid var(--line);
+border-radius:12px;padding:14px 18px;margin:18px 0}
+.tpl-analysis .an-figure ol{display:grid;gap:12px;margin:0;padding:0}
+.tpl-analysis .an-figure .blk-step{display:grid;grid-template-columns:auto 1fr;gap:2px 12px}
+.tpl-analysis .an-figure .blk-n{grid-row:1/3;font:700 13px/1.5 ui-monospace,Menlo,Consolas,
+monospace;color:var(--accent);align-self:start}
+.tpl-analysis .an-figure .blk-title{font-weight:650;color:var(--ink)}
+.tpl-analysis .an-figure .blk-text{color:var(--ink-3);font-size:13.5px;line-height:1.55}
+/* Measurement callout — the reference's `.note` voice, promoted to a panel because in this type
+   a measurement is the evidence the answer rests on. */
+.tpl-analysis .an-measure>.blk-callout{background:var(--code);border-left-color:var(--accent);
+border-radius:10px;padding:10px 15px}
+.tpl-analysis .an-measure .blk-title{font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+/* Comparison table — the reference's `<table class="compare">`. No marker: a markdown table gets
+   no CLASS or wrapper hook from the renderer (its structural hooks — table/thead/tbody/td — are
+   all it has), so this styles the bare element scoped to this template, exactly as `review` and
+   `dashboard` do for their zebra rows.
+   `:not(.telemetry):not(.gates)` is NOT defensive dressing. The renderer appends its own
+   `table.gates` and `table.telemetry` inside `<main>`, so an unqualified `.tpl-analysis table`
+   restyled them too — a leak the cross-style gate CANNOT see, because it stays inside `analysis`.
+   Found by review, reproduced, then excluded.
+   The row-header column is `tbody td:first-child`, NOT `tbody th`: markdown emits every body
+   cell as `<td>`, so the `th` form was a dead selector that styled nothing. Also review's. */
+.tpl-analysis table:not(.telemetry):not(.gates){border:1px solid var(--line);border-radius:12px;
+border-collapse:separate;border-spacing:0;overflow:hidden;margin:18px 0}
+.tpl-analysis table:not(.telemetry):not(.gates) thead th{background:var(--code);
+font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;
+color:var(--ink-3);text-align:left}
+.tpl-analysis table:not(.telemetry):not(.gates) tbody td:first-child{font-weight:650;
+color:var(--ink)}
+.tpl-analysis table:not(.telemetry):not(.gates) tbody tr:nth-child(even){background:var(--code)}
+
+/* An ordinary fenced listing, in a box with its language and a copy button. RICH ONLY —
+   `plain` carries no template CSS by definition and stays a bare <pre>. The box owns the
+   border, radius and ground that `pre` supplies on its own elsewhere, so the bar and the
+   listing share one outline instead of stacking two. */
+.doc-code{margin:0 0 14px;border:1px solid var(--line);border-radius:10px;
+background:var(--code);overflow:hidden}
+.doc-code-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+padding:5px 8px 5px 14px;border-bottom:1px solid var(--line)}
+.doc-code-lang{font:11.5px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--ink-3);
+overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-code-copy{flex:none;font:11.5px/1.4 ui-monospace,Menlo,Consolas,monospace;
+color:var(--ink-2);background:var(--surface);border:1px solid var(--line);border-radius:6px;
+padding:3px 10px;cursor:pointer}
+.doc-code-copy:hover{color:var(--accent);border-color:var(--accent)}
+.doc-code-copy:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.doc-code-copy[data-state=ok]{color:var(--accent);border-color:var(--accent)}
+.doc-code-copy[data-state=fail]{color:var(--ink-2);border-color:var(--ink-3)}
+.doc-code>pre{margin:0;border:0;border-radius:0;background:none}
+/* Paper cannot take a copy. Printing the control would print a button that does nothing. */
+@media print{.doc-code-copy{display:none}}
+
+:root{--accent:#7f9ae8;}
+:root[data-theme=dark]{--accent:#7f9ae8;}
+:root[data-theme=light]{--accent:#1f3f9e;}
+@media print{:root,:root[data-theme=dark]{--accent:#1f3f9e;}}
+</style>
+</head>
+<body class="tpl-analysis">
+<div class="wrap">
+<header>
+<div class="eyebrow">design artifact · updated 2026-08-07 22:42 MDT</div>
+<h1>#74 What writes to the documentation room</h1>
+
+</header>
+<main>
+<h1>What writes to the <code>documentation</code> room</h1>
+<p><strong>Issue #74. Audit only — nothing here deletes or moves a single drawer.</strong> Measured live on 2026-08-08 against <code>~/.mempalace/palace/chroma.sqlite3</code>, read-only.</p>
+<hr>
+<nav class="an-index"><ol><li><a href="#s1">The answer in one line</a></li><li><a href="#s2">AC1 — the write paths, named</a></li><li><a href="#s3">AC2 — what a typical drawer actually contains</a></li><li><a href="#s4">AC3 — retrieval evidence, not intuition</a></li><li><a href="#s5">AC4 — recommendation, with the trade-off stated</a></li><li><a href="#s6">AC5 — the rule, so the ratio does not rebuild itself</a></li><li><a href="#s7">What this audit did not do</a></li><li><a href="#s8">How to re-run any of this</a></li></ol></nav>
+<section class="an-q" id="s1"><h3>The answer in one line <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer"><strong>Nothing writes to it. It stopped growing in April 2026.</strong></p>
+<p><code>documentation</code> holds 18,731 of 22,110 drawers (84.7%), and <strong>18,729 of those were written by a single bulk <code>mempalace mine</code> run in April 2026.</strong> Exactly <strong>two</strong> drawers have been added since — both in July, both by an agent. It is not a room that is filling up. It is a fossil of one import, and it has been sitting across the middle of every search since.</p>
+<div class="blk blk-verdict"><div class="blk-row is-ship"><span class="blk-key">ship</span><span class="blk-text">Split by project (#77), keep every drawer, and mark the import as a dated snapshot.</span></div><div class="blk-row is-risk"><span class="blk-key">risk</span><span class="blk-text">65 of 100 retrieved hits come from April-2026 file snapshots that have since changed.</span></div><div class="blk-row is-risk"><span class="blk-key">risk</span><span class="blk-text">Tightening ingestion would change nothing — there is no tap left to turn down.</span></div></div>
+<div class="blk blk-chips"><span class="blk-chip is-blocked">write path</span><span class="blk-chip is-done">room growth</span><span class="blk-chip is-wip">retrieval share</span></div>
+<div class="blk blk-callout an-measure"><div class="blk-callout is-measure"><div class="blk-title">The two numbers that carry the audit</div><p>The April 2026 bulk import is 18,901 of 22,110 drawers — 85.5% of the entire palace — and
+99.1% of that import landed in <code>documentation</code>. Everything written since May is 3,209
+drawers, and exactly 2 of them landed there.</p></div></div>
+<hr></section>
+<section class="an-q" id="s2"><h3>AC1 — the write paths, named <span class="chip c-unstated an-conf">—</span></h3><h3>This repository writes nothing to it</h3>
+<p><code>grep -rn &quot;documentation&quot; hooks/ skills/ rawgentic_memory/</code> returns two hits, both prose in <code>skills/recall/SKILL.md</code> describing what the room is. No hook, no skill, and no server endpoint in this repository files a drawer into <code>documentation</code>. <code>rawgentic_memory/server.py</code> has no write path to the palace at all beyond the canary.</p>
+<h3>The room is assigned upstream, by folder name</h3>
+<p>Room routing lives in the third-party <code>mempalace</code> package:</p>
+<ul>
+<li><code>mempalace/room_detector_local.py:43-48</code> — <code>FOLDER_ROOM_MAP</code> maps the folder keywords</li>
+</ul>
+<p>  <code>docs</code>, <code>doc</code>, <code>documentation</code>, <code>wiki</code>, <code>readme</code> and <code>notes</code> to the room <code>documentation</code>.</p>
+<ul>
+<li><code>mempalace/miner.py::detect_room</code> — priority 1 is &quot;a folder in the path matches a room name</li>
+</ul>
+<p>  or keyword&quot;. A file under <code>docs/</code> therefore lands in <code>documentation</code> before content is   considered at all. The fallback when nothing matches is <code>general</code>, not <code>documentation</code>.</p>
+<p>So every project&#x27;s <code>docs/</code> directory routes into one shared room, across every project mined.</p>
+<h3>Who actually wrote them</h3>
+<table>
+<thead><tr><th><code>added_by</code></th><th>drawers</th></tr></thead>
+<tbody>
+<tr><td><code>mempalace</code> (the miner CLI)</td><td>18,729</td></tr>
+<tr><td><code>claude-fable</code> (an agent)</td><td>2</td></tr>
+</tbody>
+</table>
+<p>For contrast, the whole palace: <code>mempalace</code> 18,901, <code>claude-code</code> 1,014, unset 537, <code>claude</code> 495, <code>mcp</code> 224, <code>claude-opus-4.8</code> 65.</p>
+<h3>When</h3>
+<table>
+<thead><tr><th><code>filed_at</code> month</th><th><code>documentation</code></th><th>whole palace</th></tr></thead>
+<tbody>
+<tr><td>2026-04</td><td>18,729</td><td>18,901</td></tr>
+<tr><td>2026-05</td><td>0</td><td>8</td></tr>
+<tr><td>2026-06</td><td>0</td><td>304</td></tr>
+<tr><td>2026-07</td><td>2</td><td>2,664</td></tr>
+<tr><td>2026-08</td><td>0</td><td>233</td></tr>
+</tbody>
+</table>
+<p>Two numbers carry the whole audit:</p>
+<ul>
+<li>The April import is <strong>18,901 of 22,110 drawers — 85.5% of the entire palace</strong>, and 99.1% of</li>
+</ul>
+<p>  that import went into <code>documentation</code>.</p>
+<ul>
+<li>**Everything written since May is 3,209 drawers, and exactly 2 of them landed in</li>
+</ul>
+<p>  <code>documentation</code>.**</p>
+<p>Every source path in the room begins <code>/tmp/mempalace-restage/&lt;project&gt;/docs/...</code> — a staging directory used for that one migration. The paths do not exist any more.</p>
+<hr></section>
+<section class="an-q" id="s3"><h3>AC2 — what a typical drawer actually contains <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">639 distinct source files became 18,731 drawers. <strong>Mean 29.3 chunks per file, median 23, maximum 174.</strong> One long planning document becomes over a hundred drawers.</p>
+<table>
+<thead><tr><th>source file</th><th>drawers</th></tr></thead>
+<tbody>
+<tr><td><code>millions/docs/plans/2026-02-27-phase4-strategy-templates-plan.md</code></td><td>176</td></tr>
+<tr><td><code>grocusave/docs/superpowers/plans/2026-03-31-national-data-layer.md</code></td><td>175</td></tr>
+<tr><td><code>grocusave/docs/planning/ux-design-specification.md</code></td><td>165</td></tr>
+<tr><td><code>rawgentic-memorypalace/docs/superpowers/plans/2026-04-14-mempalace-integration.md</code></td><td>165</td></tr>
+<tr><td><code>2024-2025_Taxes/docs/superpowers/plans/2026-04-08-tax-expense-tracker.md</code></td><td>147</td></tr>
+</tbody>
+</table>
+<p>Drawer size is uniform: <strong>median 719 characters, mean 685, maximum 824.</strong> That is a mechanical fixed-width chunker, not a semantic one. Three drawers sampled at the 25th, 50th and 75th percentile:</p>
+<blockquote><code>chorestory/docs/product/REPORTING_REQUIREMENTS_FAMILY_ADMINS.md</code></blockquote>
+<blockquote>&quot;4 days (actual average)&quot; - &quot;This chore is completed 2 days early on average - reduce</blockquote>
+<blockquote>frequency&quot; 5. <strong>Reward Optimization Analysis</strong> - <strong>Question:</strong> &quot;Is the reward value</blockquote>
+<blockquote>appropriate?&quot; …</blockquote>
+<blockquote><code>chorestory/docs/archive/analysis/CRITICAL_BUG_ANALYSIS_CHORE_ROLLOVER.md</code></blockquote>
+<blockquote>od**: &quot;Is chore date before today&#x27;s date?&quot; (correct semantics) ### 3. Test Edge Cases at</blockquote>
+<blockquote>Boundaries Always test: - Midnight (00:00:00) …</blockquote>
+<blockquote><code>millions/docs/plans/2026-02-27-phase4-strategy-templates-design.md</code></blockquote>
+<blockquote>on wizard in the dashboard lets users configure and launch new strategies. --- ## Design</blockquote>
+<blockquote>Decisions | Decision | Choice | Rationale | …</blockquote>
+<p>Two of the three <strong>begin mid-word</strong> — <code>od<strong>:</code> is the tail of <code>method</strong>:</code>, and <code>on wizard</code> is the tail of something like <code>A configuration wizard</code>. This is the honest characterization: a typical <code>documentation</code> drawer is a ~700-character slice cut out of the middle of a long markdown file, with no guarantee that it starts or ends at a sentence, let alone an idea.</p>
+<p>Is it content a future session would want returned? <strong>Sometimes, and that is the problem.</strong> The third sample is a genuine design-decision table worth recalling. The second is a lesson-learned from an <code>archive/</code> directory. The first is a requirements fragment about a feature that may no longer exist. A reader cannot tell which is which from the drawer, because the drawer is a snapshot of a file as it stood in April 2026 and the file has moved on.</p>
+<hr></section>
+<section class="an-q" id="s4"><h3>AC3 — retrieval evidence, not intuition <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">Ten realistic session queries, top 10 results each, room recorded for every hit:</p>
+<table>
+<thead><tr><th>query</th><th>hits from <code>documentation</code></th></tr></thead>
+<tbody>
+<tr><td>why did we choose this database</td><td>10 / 10</td></tr>
+<tr><td>chorestory chore approval flow</td><td>10 / 10</td></tr>
+<tr><td>what broke in CI last time</td><td>9 / 10</td></tr>
+<tr><td>how do we deploy the studio</td><td>8 / 10</td></tr>
+<tr><td>how does the recall hook work</td><td>8 / 10</td></tr>
+<tr><td>what did we decide about the memory server</td><td>8 / 10</td></tr>
+<tr><td>what is the test gate for this project</td><td>7 / 10</td></tr>
+<tr><td>vercel deployment problem</td><td>3 / 10</td></tr>
+<tr><td>owner decision about merging pull requests</td><td>2 / 10</td></tr>
+<tr><td>known gotcha with the mirror</td><td>0 / 10</td></tr>
+</tbody>
+</table>
+<p><strong>Across 100 retrieved hits: 65 came from <code>documentation</code>.</strong></p>
+<table>
+<thead><tr><th>room</th><th>share of hits</th></tr></thead>
+<tbody>
+<tr><td>documentation</td><td>65%</td></tr>
+<tr><td>decisions</td><td>16%</td></tr>
+<tr><td>reference</td><td>5%</td></tr>
+<tr><td>gotchas</td><td>4%</td></tr>
+<tr><td>everything else</td><td>10%</td></tr>
+</tbody>
+</table>
+<p>This settles the question the issue asked. The room is <strong>not</strong> occupying the index without being recalled. The opposite: it wins roughly two-thirds of every retrieval, and it does so with April-2026 snapshots of files that have since changed.</p>
+<p>The two queries where the curated rooms won are the tell. &quot;known gotcha with the mirror&quot; returned zero <code>documentation</code> hits and found the real drawer. &quot;owner decision about merging pull requests&quot; returned 2 of 10. When a question is sharply about a decision or a gotcha, the curated rooms surface. When it is a general &quot;how does X work&quot; question — which is most questions — 18,731 fixed-width fragments of old plans crowd them out.</p>
+<hr></section>
+<section class="an-q" id="s5"><h3>AC4 — recommendation, with the trade-off stated <span class="chip c-confirmed an-conf">VERIFIED</span></h3><p class="an-answer"><strong>Recommended: split by project (issue #77), keep the content, and mark it as a dated snapshot. Do not delete, and do not tighten ingestion.</strong></p>
+<p>Why each alternative loses:</p>
+<p><strong>Leave it alone.</strong> Cheapest, and defensible — retrieval works, people are finding things. It loses because 65% of every result set comes from one April snapshot, and a reader cannot tell a live note from a four-month-old file that has since been rewritten. That is a correctness risk, not a tidiness complaint.</p>
+<p><strong>Scope ingestion more tightly.</strong> This was the obvious guess before the measurement, and the measurement kills it. <strong>Nothing is ingesting.</strong> Two drawers in four months. There is no tap to turn down; tightening the miner&#x27;s routing would change nothing about the 18,731 already there.</p>
+<p><strong>Delete or archive the slice.</strong> Not recommended, and by the issue&#x27;s own rule not a default. The content is demonstrably being used — 65 of 100 hits. Deleting it would remove the material that is currently answering most questions, and replace a precision problem with a recall problem.</p>
+<p><strong>Split into per-project rooms (#77).</strong> Recommended. It directly fixes what is broken: the palace&#x27;s premise is that a search can be scoped, and a room spanning 14 wings and 85% of everything scopes to nothing. Splitting restores the scope without losing a drawer. The trade-off is honest: it is the largest single change ever made to this palace, it needs a verified backup and a reversible path, and it re-files 18,731 drawers whose retrieval behavior will change — which is why #77 requires a before-and-after measurement on a fixed query set rather than a belief that it got better.</p>
+<p><strong>One addition to #77, from this audit.</strong> Splitting alone does not fix staleness. These are April-2026 snapshots. #77 should carry the import date into the new rooms so a future reader — and a future ranking rule — can tell a four-month-old file snapshot from a note somebody wrote this week.</p>
+<div class="blk blk-steps an-figure"><ol><li class="blk-step"><span class="blk-n">1</span><span class="blk-title">Back up the palace and restore it once</span><span class="blk-text">308 MB. A restore that has never been tried is not a backup.</span></li><li class="blk-step"><span class="blk-n">2</span><span class="blk-title">Break the room down per wing first</span><span class="blk-text">The 18,731 by wing. The epic&#x27;s table is wing TOTALS, which is a different number.</span></li><li class="blk-step"><span class="blk-n">3</span><span class="blk-title">Resolve the three fragmented wing names</span><span class="blk-text">#73&#x27;s linter fails on them today. Re-filing into <code>rawgentic</code> while <code>wing_rawgentic</code> also exists just moves the problem.</span></li><li class="blk-step"><span class="blk-n">4</span><span class="blk-title">Fix a query set and measure it BEFORE moving anything</span><span class="blk-text">Otherwise &quot;more findable&quot; stays a belief. The ten queries in this audit are a starting set.</span></li><li class="blk-step"><span class="blk-n">5</span><span class="blk-title">Re-file per project, carrying the import date</span><span class="blk-text">Splitting alone does not fix staleness; these are April snapshots.</span></li><li class="blk-step"><span class="blk-n">6</span><span class="blk-title">Measure the same query set again</span><span class="blk-text">The number, not the feeling, decides whether it worked.</span></li></ol></div>
+<hr></section>
+<section class="an-q" id="s6"><h3>AC5 — the rule, so the ratio does not rebuild itself <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">Written here, and to be carried into <code>#77</code> when it lands:</p>
+<blockquote>**A bulk mine of a project&#x27;s files is filed per project, never into a shared room, and is</blockquote>
+<blockquote>marked with the date it was taken.**</blockquote>
+<blockquote></blockquote>
+<blockquote><code>docs/</code> is a folder name, not a topic. Routing every project&#x27;s <code>docs/</code> directory into one</blockquote>
+<blockquote>shared <code>documentation</code> room defeats scoped search at the room level, which is the palace&#x27;s</blockquote>
+<blockquote>whole retrieval premise. A bulk import is also a <em>snapshot</em>: it records a file as it stood on</blockquote>
+<blockquote>one day, and it does not update when the file does. It must therefore be distinguishable from</blockquote>
+<blockquote>a note somebody wrote deliberately, both by a person reading a result and by any future</blockquote>
+<blockquote>ranking rule.</blockquote>
+<p>The rule holds regardless of whether #77 is done: it constrains the next bulk mine, and the next one is what would rebuild the ratio.</p>
+<hr></section>
+<section class="an-q" id="s7"><h3>What this audit did not do <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">Nothing was deleted, moved, or rewritten. No drawer was created. Every query above was run read-only, and the palace is byte-identical to how it was found.</p></section>
+<section class="an-q" id="s8"><h3>How to re-run any of this <span class="chip c-unstated an-conf">—</span></h3><p class="an-answer">The shape numbers come from the linter shipped in #73:</p>
+<div class="doc-code"><div class="doc-code-bar"><span class="doc-code-lang">bash</span><button class="doc-code-copy" type="button" hidden>Copy</button></div><pre><code>python -m rawgentic_memory.palace_lint --json</code></pre></div>
+<p>The retrieval experiment is ten <code>search_memories</code> calls with the room of each hit tallied. The per-drawer counts are read directly from <code>~/.mempalace/palace/chroma.sqlite3</code> in <code>mode=ro</code>.</p>
+<div class="blk blk-provenance"><dl><dt>source</dt><dd>docs/reviews/2026-08-08-74-documentation-room-audit.md</dd><dt>issue</dt><dd>#74</dd><dt>epic</dt><dd>#71</dd><dt>measured</dt><dd>2026-08-08</dd><dt>palace</dt><dd>22,110 drawers, 51 wings, 66 rooms</dd></dl></div></section>
+
+</main>
+<footer>Last updated: 2026-08-07 22:42 MDT · generated by design-doc-publish — self-contained, no external resources.</footer>
+</div>
+<script>
+(function(){
+var boxes=document.querySelectorAll('.doc-code');
+if(!boxes.length)return;
+function fallback(text){
+var ta=document.createElement('textarea');
+ta.value=text;ta.setAttribute('readonly','');
+ta.style.position='fixed';ta.style.top='-1000px';ta.style.opacity='0';
+document.body.appendChild(ta);ta.select();
+var ok=false;
+try{ok=document.execCommand('copy');}catch(e){ok=false;}
+document.body.removeChild(ta);
+return ok;
+}
+function flash(btn,label,state){
+btn.textContent=label;
+btn.setAttribute('data-state',state);
+window.clearTimeout(btn.getAttribute('data-timer'));
+btn.setAttribute('data-timer',window.setTimeout(function(){
+btn.textContent='Copy';btn.removeAttribute('data-state');},2000));
+}
+Array.prototype.forEach.call(boxes,function(box){
+var btn=box.querySelector('.doc-code-copy');
+var code=box.querySelector('code');
+if(!btn||!code)return;
+btn.hidden=false;
+btn.addEventListener('click',function(){
+var text=code.textContent;
+function done(ok){flash(btn,ok?'Copied':'Press Ctrl+C',ok?'ok':'fail');}
+if(navigator.clipboard&&window.isSecureContext){
+navigator.clipboard.writeText(text).then(function(){done(true);},
+function(){done(fallback(text));});
+}else{done(fallback(text));}
+});
+});
+})();
+</script>
+</body>
+</html>
