@@ -110,6 +110,13 @@ class TestDeclaredPredicates:
         assert "requires" not in kg_health.SINGLE_VALUED_PREDICATES
         assert "blocked_by" not in kg_health.SINGLE_VALUED_PREDICATES
 
+    def test_debatable_predicates_are_left_out(self):
+        """A wrong entry fails the check on valid data, which teaches everyone to
+        ignore the check. A subject can publish through several channels and use
+        several models, so these are reported rather than enforced."""
+        for predicate in ("publishes_via", "provenance_is", "uses_model"):
+            assert predicate not in kg_health.SINGLE_VALUED_PREDICATES
+
     def test_declared_set_is_immutable(self):
         assert isinstance(kg_health.SINGLE_VALUED_PREDICATES, frozenset)
 
@@ -211,6 +218,18 @@ class TestMainExitCodes:
     def test_exit_0_on_undeclared_multi_value(self, undeclared_drift_db, capsys):
         """Reported, never enforced — a predicate nobody declared is a judgment call."""
         assert kg_health.main(["--db", str(undeclared_drift_db)]) == 0
+
+    def test_exit_1_on_duplicate_open_rows(self, tmp_path, capsys):
+        """The same fact stored twice is never intended — upstream's add_triple
+        dedupes exactly that, so a duplicate means something bypassed it."""
+        db = _make_db(
+            tmp_path / "dup.sqlite3",
+            [
+                ("t1", "rawgentic", "requires", "pytest", None),
+                ("t2", "rawgentic", "requires", "pytest", None),
+            ],
+        )
+        assert kg_health.main(["--db", str(db)]) == 1
 
     def test_exit_2_when_database_absent(self, tmp_path, capsys):
         """An absent database must never read as a clean bill of health."""
