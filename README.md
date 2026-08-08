@@ -177,7 +177,7 @@ python -m rawgentic_memory.palace_lint
 python -m rawgentic_memory.palace_lint --json --max-items 50
 ```
 
-Test suite — 301 tests, from `.venv/bin/pytest tests/ -q` on 2026-08-08. Re-run
+Test suite — 308 tests, from `.venv/bin/pytest tests/ -q` on 2026-08-08. Re-run
 that command rather than trusting this number; it is the kind that rots:
 - `tests/test_adapter.py` — 35 tests for the versioned adapter (CONTRACT_VERSION=3, tunnel context, dynamic contract)
 - `tests/test_server_slim.py` — 16 tests for the 7 HTTP endpoints + 410 Gone handlers
@@ -190,7 +190,7 @@ that command rather than trusting this number; it is the kind that rots:
 - `tests/test_frontend_compose.py` — 16 tests for frontend Docker Compose config
 - `tests/test_frontend_decision.py` — 12 tests for frontend deployment decisions
 - `tests/test_kg_health.py` — 28 tests for the knowledge-graph drift detector (declared predicates, read-only guarantee, exit codes)
-- `tests/test_palace_lint.py` — 34 tests for the palace linter (fragmentation exactness, skew, truncation reporting, exit codes)
+- `tests/test_palace_lint.py` — 41 tests for the palace linter (fragmentation exactness, skew, truncation reporting, status validation, exit codes)
 - `tests/integration/` — graceful degradation, hook timeouts, version boundaries, acceptance criteria
 - `tests/canary.py` — standalone continuous-health canary script
 

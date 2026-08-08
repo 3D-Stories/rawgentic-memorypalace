@@ -46,6 +46,12 @@ class TestNormalizeWing:
     def test_case_is_ignored(self):
         assert palace_lint.normalize_wing("Herdr-Dashboard") == "herdr_dashboard"
 
+    def test_case_folding_happens_before_the_prefix_is_stripped(self):
+        """The other order leaves `Wing_rawgentic` as `wing_rawgentic`, so it never
+        meets `rawgentic` and the fragmentation is missed."""
+        assert palace_lint.normalize_wing("Wing_rawgentic") == "rawgentic"
+        assert palace_lint.find_fragmented_wings({"Wing_rawgentic": 5, "rawgentic": 90})
+
     def test_a_distinct_project_keeps_a_distinct_key(self):
         """The check AC3 is sharpest about: these two must never collide."""
         assert palace_lint.normalize_wing("rawgentic") != palace_lint.normalize_wing(
@@ -183,6 +189,42 @@ class TestStatusShape:
     def test_a_non_dict_status_is_rejected(self):
         with pytest.raises(palace_lint.PalaceUnreadable):
             palace_lint.lint(None, kg=None)
+
+    def test_a_status_without_a_total_is_rejected(self):
+        """A partial response would otherwise report vacuous zero shares and exit
+        0 — a broken read presented as a healthy palace."""
+        with pytest.raises(palace_lint.PalaceUnreadable):
+            palace_lint.lint({"wings": {"a": 1}, "rooms": {"r": 1}}, kg=None)
+
+    def test_a_non_integer_total_is_rejected(self):
+        with pytest.raises(palace_lint.PalaceUnreadable):
+            palace_lint.lint(status("many", {"a": 1}, {"r": 1}), kg=None)
+
+    def test_a_negative_count_is_rejected(self):
+        with pytest.raises(palace_lint.PalaceUnreadable):
+            palace_lint.lint(status(5, {"a": -1}, {"r": 5}), kg=None)
+
+    def test_a_non_dict_wings_collection_is_rejected(self):
+        # Built by hand: the `status` helper coerces with dict(), which would
+        # turn a bad value into a valid empty dict and hide the defect.
+        with pytest.raises(palace_lint.PalaceUnreadable):
+            palace_lint.lint(
+                {"total_drawers": 5, "wings": ["a"], "rooms": {"r": 5}}, kg=None
+            )
+
+
+class TestMaxItemsValidation:
+    def test_zero_is_rejected(self, healthy, monkeypatch):
+        """A cap of 0 would empty every list while the hard-problem list stayed
+        populated: the output would say "no fragmentation" and still exit 1."""
+        monkeypatch.setattr(palace_lint, "load_status", lambda: healthy)
+        with pytest.raises(SystemExit):
+            palace_lint.main(["--max-items", "0"])
+
+    def test_a_negative_cap_is_rejected(self, healthy, monkeypatch):
+        monkeypatch.setattr(palace_lint, "load_status", lambda: healthy)
+        with pytest.raises(SystemExit):
+            palace_lint.main(["--max-items", "-3"])
 
 
 class TestMain:

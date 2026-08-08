@@ -60,9 +60,20 @@ def normalize_wing(name: str) -> str:
     normalized forms are EXACTLY equal, which is what keeps `rawgentic` and
     `rawgentic-next` apart — a checker that cannot tell those apart is worse than
     no checker at all (#73 AC3).
+
+    Case folding happens FIRST, before the prefix is stripped. The other order
+    leaves `Wing_rawgentic` normalizing to `wing_rawgentic`, so it never meets
+    `rawgentic` and the fragmentation is missed.
+
+    The assumption this rule makes, stated out loud: two wings whose names differ
+    only by `wing_`, by a hyphen versus an underscore, or by case are the same
+    project. If they ever were two genuinely different projects, the collision is
+    still worth failing on — a scoped search could not tell them apart either,
+    and neither could a person reading the list.
     """
-    stripped = name[len(_WING_PREFIX):] if name.startswith(_WING_PREFIX) else name
-    return stripped.replace("-", "_").lower()
+    folded = name.casefold()
+    stripped = folded[len(_WING_PREFIX):] if folded.startswith(_WING_PREFIX) else folded
+    return stripped.replace("-", "_")
 
 
 def find_fragmented_wings(wings: dict) -> list[dict]:
@@ -125,14 +136,31 @@ def kg_coverage(triples: int, drawers: int) -> dict:
 
 def lint(status: dict, kg: dict | None, max_items: int = DEFAULT_MAX_ITEMS) -> dict:
     """Run every check over one status dict. Pure — no palace access."""
-    if not isinstance(status, dict) or "wings" not in status or "rooms" not in status:
-        raise PalaceUnreadable(
-            "status is missing 'wings'/'rooms'; upstream returned an unusable shape"
-        )
+    if not isinstance(status, dict):
+        raise PalaceUnreadable(f"status is {type(status).__name__}, not a dict")
+    for key in ("total_drawers", "wings", "rooms"):
+        if key not in status:
+            raise PalaceUnreadable(
+                f"status is missing '{key}' — upstream returned an unusable shape"
+            )
 
     wings = status["wings"]
     rooms = status["rooms"]
-    total = status.get("total_drawers", 0)
+    total = status["total_drawers"]
+
+    # A partial response that carried wings and rooms but no usable total would
+    # otherwise report vacuous zero shares and exit 0 — a broken read presented
+    # as a healthy palace.
+    if not isinstance(total, int) or isinstance(total, bool) or total < 0:
+        raise PalaceUnreadable(f"total_drawers is not a count: {total!r}")
+    for label, counts in (("wings", wings), ("rooms", rooms)):
+        if not isinstance(counts, dict):
+            raise PalaceUnreadable(f"'{label}' is {type(counts).__name__}, not a dict")
+        for name, drawers in counts.items():
+            if not isinstance(name, str):
+                raise PalaceUnreadable(f"'{label}' has a non-string key: {name!r}")
+            if not isinstance(drawers, int) or isinstance(drawers, bool) or drawers < 0:
+                raise PalaceUnreadable(f"'{label}[{name}]' is not a count: {drawers!r}")
 
     fragmented = find_fragmented_wings(wings)
     empty = near_empty_wings(wings)
@@ -254,6 +282,23 @@ def render(report: dict) -> str:
     return "\n".join(lines)
 
 
+def _positive_int(raw: str) -> int:
+    """Reject a cap below 1.
+
+    ``--max-items 0`` would empty every list while the hard-problem list stayed
+    populated, so the human output would say "no fragmentation" and the process
+    would still exit 1. A negative cap additionally produces impossible withheld
+    counts.
+    """
+    try:
+        value = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{raw!r} is not an integer")
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"--max-items must be at least 1, got {value}")
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="rawgentic_memory.palace_lint",
@@ -261,8 +306,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--json", action="store_true", help="emit the report as JSON")
     parser.add_argument(
-        "--max-items", type=int, default=DEFAULT_MAX_ITEMS,
-        help=f"cap each list (default {DEFAULT_MAX_ITEMS}); withheld counts are always reported",
+        "--max-items", type=_positive_int, default=DEFAULT_MAX_ITEMS,
+        help=(
+            f"cap each list (default {DEFAULT_MAX_ITEMS}, minimum 1). "
+            "Withheld counts are always reported."
+        ),
     )
     args = parser.parse_args(argv)
 
