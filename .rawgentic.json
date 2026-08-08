@@ -41,8 +41,8 @@
       "publicRepo": "3D-Stories/rawgentic-memorypalace",
       "privateMirror": "STARSAirAmbulance/rawgentic-memorypalace-private",
       "privateMirrorPat": "~/.secrets/github_pat_stars",
-      "syncMethod": "git remote dual-push on origin",
-      "note": "Public repo is community-facing canonical. Private mirror lives in STARSAirAmbulance org because that's where the Claude org plugin marketplace installs from. Both stay in sync via dual-push configured in .git/config. The STARS PAT is required to push to the private mirror; the 3D-Stories PAT (~/.secrets/github-pat) is required for the public repo. Per-URL credential helpers in .git/config route the right PAT to the right URL."
+      "syncMethod": ".github/workflows/mirror-to-stars.yml — a GitHub Action that pushes main to the private mirror on every push to main, using the STARS_PAT repo secret",
+      "note": "Public repo is community-facing canonical. Private mirror lives in STARSAirAmbulance org because that's where the Claude org plugin marketplace installs from. Mirroring is done ONLY by the mirror-to-stars.yml Action; no dual-push remote is configured, and none should be. Verify a sync by reading that Action's run conclusion and comparing the two main shas — NEVER by a local push. A local push that reaches the STARS URL is misconfiguration, and its 'Repository not found' has caused two false 'the mirror is broken' diagnoses (issue #76, closed as invalid; issue #78). The 3D-Stories PAT (~/.secrets/github-pat) is required for the public repo; ~/.secrets/github_pat_stars is a human's credential for the mirror, not something any sync path uses."
     }
   }
 }
