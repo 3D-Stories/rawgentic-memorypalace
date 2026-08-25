@@ -385,3 +385,24 @@ class TestFindTunnels:
         assert len(tunnels) == 1
         assert "proj_a" not in tunnels[0].connected_wings
         assert "proj_b" in tunnels[0].connected_wings
+
+
+class TestPalacePathResolution:
+    """The adapter must honor MEMPALACE_PALACE_PATH, the same variable mempalace's
+    own config reads. Without it, a caller that isolates the palace via the
+    environment silently writes to the real ~/.mempalace/palace instead."""
+
+    def test_explicit_path_wins_over_env(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MEMPALACE_PALACE_PATH", str(tmp_path / "from_env"))
+        adapter = MempalaceAdapter(palace_path=str(tmp_path / "explicit"))
+        assert adapter.palace_path == str(tmp_path / "explicit")
+
+    def test_env_var_used_when_no_explicit_path(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("MEMPALACE_PALACE_PATH", str(tmp_path / "from_env"))
+        adapter = MempalaceAdapter()
+        assert adapter.palace_path == str(tmp_path / "from_env")
+
+    def test_default_used_when_neither_set(self, monkeypatch):
+        monkeypatch.delenv("MEMPALACE_PALACE_PATH", raising=False)
+        adapter = MempalaceAdapter()
+        assert adapter.palace_path.endswith("/.mempalace/palace")
