@@ -13,3 +13,5 @@ claude_docs/
 # Local docker-compose config for the frontend. frontend/.env.example is the
 # tracked template; the real .env carries machine-specific paths and UID/GID.
 frontend/.env
+revert-*.json
+.playwright-mcp/

@@ -14,6 +14,12 @@ services:
     build: https://github.com/tomsalphaclawbot/memory-palace-web-frontend.git
     container_name: rawgentic-native-frontend
     restart: unless-stopped
+    # Run as the host user that OWNS the palace. mempalace chmods its data
+    # directory to 0700 on purpose, so the image's built-in `app` user cannot
+    # traverse a real palace and gunicorn crash-loops on
+    # `PermissionError: 'palace/chroma.sqlite3'`. Matching the owner's uid is the
+    # fix; loosening the palace to 0755 would undo a deliberate privacy setting.
+    user: "${FRONTEND_UID:-1000}:${FRONTEND_GID:-1000}"
     ports:
       - "127.0.0.1:8098:8099"
     volumes:
@@ -29,8 +35,18 @@ services:
     build: https://github.com/tomsalphaclawbot/memory-palace-web-frontend.git
     container_name: rawgentic-mempalace-frontend
     restart: unless-stopped
+    # Run as the host user that OWNS the palace. mempalace chmods its data
+    # directory to 0700 on purpose, so the image's built-in `app` user cannot
+    # traverse a real palace and gunicorn crash-loops on
+    # `PermissionError: 'palace/chroma.sqlite3'`. Matching the owner's uid is the
+    # fix; loosening the palace to 0755 would undo a deliberate privacy setting.
+    user: "${FRONTEND_UID:-1000}:${FRONTEND_GID:-1000}"
     ports:
-      - "127.0.0.1:8099:8099"
+      # Default stays loopback. This page has NO authentication and serves the
+      # whole palace, so exposing it is an explicit per-host choice, never a
+      # default. Set FRONTEND_BIND=0.0.0.0 in .env AND add a ufw rule scoped to
+      # your subnet — the binding alone does nothing while ufw denies the port.
+      - "${FRONTEND_BIND:-127.0.0.1}:8099:8099"
     volumes:
       - ${MEMPALACE_CHROMADB_PATH:-${HOME}/.mempalace/palace}:/app/palace:ro
     healthcheck:
