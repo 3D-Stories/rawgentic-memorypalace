@@ -94,7 +94,7 @@ class MempalaceAdapter:
     TRUNCATION_BUDGET = MAX_CONTENT_CHARS_PER_RESULT - len(TRUNCATION_MARKER) - 5
 
     def __init__(self, palace_path: str | None = None):
-        self.palace_path = palace_path or os.path.expanduser("~/.mempalace/palace")
+        self.palace_path = palace_path or os.environ.get("MEMPALACE_PALACE_PATH") or os.path.expanduser("~/.mempalace/palace")
 
     def wakeup(self, project: str | None = None) -> WakeupContext:
         text = self._render_tunnel_context(project) if project else ""
