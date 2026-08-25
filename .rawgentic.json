@@ -10,7 +10,15 @@
     "fullName": "3D-Stories/rawgentic-memorypalace",
     "defaultBranch": "main"
   },
-  "techStack": ["python", "fastapi", "uvicorn", "mempalace", "chromadb", "bash"],
+  "techStack": [
+    "python",
+    "fastapi",
+    "uvicorn",
+    "mempalace",
+    "chromadb",
+    "bash",
+    "docker"
+  ],
   "testing": {
     "frameworks": [
       {
@@ -32,7 +40,10 @@
     }
   ],
   "documentation": {
-    "primaryFiles": ["README.md", "docs/"],
+    "primaryFiles": [
+      "README.md",
+      "docs/"
+    ],
     "format": "markdown"
   },
   "protectionLevel": "sandbox",
@@ -44,5 +55,18 @@
       "syncMethod": ".github/workflows/mirror-to-stars.yml — a GitHub Action that pushes main to the private mirror on every push to main, using the STARS_PAT repo secret",
       "note": "Public repo is community-facing canonical. Private mirror lives in STARSAirAmbulance org because that's where the Claude org plugin marketplace installs from. Mirroring is done ONLY by the mirror-to-stars.yml Action; no dual-push remote is configured, and none should be. Verify a sync by reading that Action's run conclusion and comparing the two main shas — NEVER by a local push. A local push that reaches the STARS URL is misconfiguration, and its 'Repository not found' has caused two false 'the mirror is broken' diagnoses (issue #76, closed as invalid; issue #78). The 3D-Stories PAT (~/.secrets/github-pat) is required for the public repo; ~/.secrets/github_pat_stars is a human's credential for the mirror, not something any sync path uses."
     }
+  },
+  "contextMeter": {
+    "windowSize": 1000000,
+    "checkInPercent": 50,
+    "actPercent": 65
+  },
+  "ci": {
+    "provider": "github-actions",
+    "workflowDir": ".github/workflows"
+  },
+  "authority": {
+    "enabled": true,
+    "gateMarkers": true
   }
 }
