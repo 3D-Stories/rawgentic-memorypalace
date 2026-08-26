@@ -46,6 +46,12 @@ services:
       # whole palace, so exposing it is an explicit per-host choice, never a
       # default. Set FRONTEND_BIND=0.0.0.0 in .env AND add a ufw rule scoped to
       # your subnet — the binding alone does nothing while ufw denies the port.
+      #
+      # Since gateway#16 there is a better answer than widening this: the
+      # cloudflared sidecar below reaches this service over the compose network
+      # and never touches the host port, so the public hostname works with this
+      # left at loopback. Setting 0.0.0.0 now serves the palace to the whole LAN
+      # WITHOUT the zone login, which is the hole gateway#16 exists to close.
       - "${FRONTEND_BIND:-127.0.0.1}:8099:8099"
     volumes:
       - ${MEMPALACE_CHROMADB_PATH:-${HOME}/.mempalace/palace}:/app/palace:ro
@@ -54,3 +60,60 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # The PUBLIC route, added for 3D-Stories/gateway#16. cloudflared dials OUTWARD to Cloudflare
+  # and publishes no host port, so it adds no inbound surface of its own.
+  #
+  # This is what finally puts a control in front of a page that has none. The frontend serves
+  # the whole palace with no authentication of its own -- the comment on `mempalace-frontend`
+  # above has said so since it was written. Cloudflare Access now proves WHO the person is
+  # before a packet reaches this host, using the `doc-harness` application on *.3dstories.ca.
+  # There is deliberately no per-service Access application: the wildcard already protects
+  # every one-label hostname under the zone.
+  cloudflared:
+    # Pinned by DIGEST, never a tag. `--no-autoupdate` stops the binary updating ITSELF; it does
+    # not stop a later `docker compose pull` resolving a moving tag to different, unreviewed
+    # contents. Same digest the doc-harness and oneshot-bench stacks run on this host:
+    # cloudflared 2026.8.2.
+    image: cloudflare/cloudflared@sha256:0aa26e284f05e6c77ae375b8c9c11d9eb6a448fb7bcd8d40f31cb6176189eb38
+    container_name: rawgentic-mempalace-cloudflared
+    restart: unless-stopped
+
+    # MEASURED on this host, not preferred. The image's own default user is uid 65532
+    # (`nonroot`), and the token below is mode 600 owned by uid 1000. Without this line
+    # cloudflared cannot open it and reports a TOKEN problem rather than a permission one,
+    # which sends the reader looking in entirely the wrong place. Running as the token's owner
+    # is what makes the mount readable. The same variables the frontend uses, for the same
+    # reason: this host's uid is 1000.
+    user: "${FRONTEND_UID:-1000}:${FRONTEND_GID:-1000}"
+
+    command: ["tunnel", "--no-autoupdate", "run"]
+
+    environment:
+      # The token arrives as a FILE. `docker inspect` prints a container's environment, so a
+      # token in an environment VALUE is readable by anything that can reach the Docker socket.
+      # cloudflared's own --help states that --token takes precedence over --token-file, so
+      # TUNNEL_TOKEN must never also be set here.
+      TUNNEL_TOKEN_FILE: /run/secrets/tunnel_token
+
+    volumes:
+      # Read-only, and a LITERAL path rather than ${VAR}: a deploy-time variable could redirect
+      # this mount at any file on the host. Only THIS ONE FILE, never ~/.secrets, which also
+      # holds the GitHub token and every model-provider key.
+      #
+      # The token is a bearer credential for the whole tunnel: anything holding it can serve
+      # traffic as this hostname. Referenced by NAME only, never by value, in every document
+      # and commit.
+      - /home/rocky00717/.secrets/mempalace-tunnel-token:/run/secrets/tunnel_token:ro
+
+    depends_on:
+      mempalace-frontend:
+        # Without this, cloudflared advertises a route to a frontend that has not finished
+        # opening the palace, and the first requests through the tunnel return a 502 that reads
+        # like a broken tunnel. The healthcheck above is what makes this answerable.
+        condition: service_healthy
+
+    # cloudflared needs no capabilities to dial outward.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
