@@ -1,6 +1,6 @@
 # rawgentic-memorypalace
 
-**v0.11.0** · Claude Code plugin providing long-term memory powered by [MemPalace](https://github.com/milla-jovovich/mempalace). Bridges Claude Code's hook system to MemPalace's Python API via a slim HTTP gatekeeper + adapter layer, with native MemPalace hooks handling ingest.
+**v0.11.1** · Claude Code plugin providing long-term memory powered by [MemPalace](https://github.com/milla-jovovich/mempalace). Bridges Claude Code's hook system to MemPalace's Python API via a slim HTTP gatekeeper + adapter layer, with native MemPalace hooks handling ingest.
 
 ## Benchmark numbers — the rule before you quote one
 
@@ -330,6 +330,10 @@ That's working as intended — the wrapper's Stop hook injects a `systemMessage`
 The Stop hook must output top-level fields (`systemMessage`, `decision`, `reason`) — NOT `hookSpecificOutput`. If you see this error, your wrapper is outdated. Update it by copying from the plugin: `cp <plugin-path>/hooks/mempalace-hook-wrapper.sh ~/.local/bin/`.
 
 ## Changelog
+
+### v0.11.1 (2026-08-29)
+
+- **`/rawgentic-memorypalace:recall <query>` returned nothing, always (#96).** The recall skill POSTed `{"query": ...}` to `/search` and parsed a `"results"` array. The server reads the body field **`prompt`**, takes the project filter from the **`x-project` header**, and returns **`{"additionalContext": "<formatted text>"}`** (`rawgentic_memory/server.py`). The field name never matched, so every search got HTTP 200 with an empty string and reported "no memories found" — including for memories filed minutes earlier. `curl --fail` sees a 200, so nothing looked broken. The endpoint is the shared hook bridge, so the skill was the side that was wrong and the server is unchanged. `skills/recall/SKILL.md` now sends `prompt`, passes `--project` as the `x-project` header, parses `additionalContext`, and documents the `min_similarity` (default `0.3`) and `x-max-results` knobs. It also states plainly that this endpoint carries **no timestamp, `source_file` or `session_id`** — use the `mempalace_search` MCP tool when those are needed — and that an empty result can mean "nothing scored above `min_similarity`" rather than "nothing is stored". `TestRecallSearchContractMatchesServer` pins both sides: three tests assert what the skill documents, and a fourth reads `server.py` so a change there fails loudly instead of silently desynchronizing the skill again. Verified live: the documented call returned 10 memories, and `x-project` filtered correctly.
 
 ### v0.11.0 (2026-08-08)
 
