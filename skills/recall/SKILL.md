@@ -52,16 +52,21 @@ If no arguments are provided, ask the user what they want to do and STOP.
 
 Read the `MEMORY_SERVER_URL` from the `Memory Server Configuration` section of CLAUDE.md. Use the URL exactly as configured there. If no such section exists, default to `http://127.0.0.1:8420`.
 
-Use the Bash tool to call the `/search` endpoint, substituting the URL you read:
+Use the Bash tool to call the `/search` endpoint, substituting the URL you read.
 
-If a project filter was specified, include the `project` field. Otherwise omit it.
+**This endpoint is the hook bridge, and its contract is not the obvious one.** It reads the
+query from the body field **`prompt`** — a `query` field is ignored, and you silently get an
+empty result. It takes the project filter from the **`x-project` header**, not from a body
+field. It returns a formatted **string**, not an array. The implementation is
+`rawgentic_memory/server.py` (`@app.post("/search")`), and `tests/test_recall_skill.py` pins
+the two sides together.
 
 **Without project filter:**
 ```bash
 curl --silent --fail --connect-timeout 2 --max-time 10 \
   -X POST "MEMORY_SERVER_URL/search" \
   -H "Content-Type: application/json" \
-  -d '{"query": "THE_QUERY", "limit": 10}'
+  -d '{"prompt": "THE_QUERY", "limit": 10}'
 ```
 
 **With project filter:**
@@ -69,10 +74,15 @@ curl --silent --fail --connect-timeout 2 --max-time 10 \
 curl --silent --fail --connect-timeout 2 --max-time 10 \
   -X POST "MEMORY_SERVER_URL/search" \
   -H "Content-Type: application/json" \
-  -d '{"query": "THE_QUERY", "project": "PROJECT_NAME", "limit": 10}'
+  -H "x-project: PROJECT_NAME" \
+  -d '{"prompt": "THE_QUERY", "limit": 10}'
 ```
 
 Replace `THE_QUERY` and `PROJECT_NAME` with the actual values. Escape any double quotes in the query.
+
+Two optional knobs are honored: `min_similarity` in the body (default `0.3` — set it lower
+when a query returns nothing you expected), and an `x-max-results` header, which wins over
+the body's `limit`.
 
 ### 3. Handle Errors
 
@@ -102,27 +112,28 @@ Do NOT attempt to start the server yourself. STOP after showing the appropriate 
 
 ### 4. Format and Display Results
 
-Parse the JSON response. The response shape is:
+Parse the JSON response. It is one formatted **string**, not an array of objects:
 ```json
 {
-  "results": [
-    {
-      "content": "...",
-      "project": "...",
-      "memory_type": "decision|event|discovery|preference|artifact",
-      "topic": "...",
-      "similarity": 0.85,
-      "source_file": "...",
-      "session_id": "...",
-      "timestamp": "..."
-    }
-  ]
+  "additionalContext": "[decision] (auth) sim=0.85 project=chorestory\nThe memory content...\n\n[discovery] (recall) sim=0.72 project=rawgentic\nMore content..."
 }
 ```
 
-**If results are empty:** Tell the user "No memories found matching that query." and STOP.
+One memory is a header line followed by its content, and a blank line separates memories. The
+header is `[<memory_type>] (<topic>) sim=<score> project=<project>`. The topic part and the
+project part are omitted when the memory carries neither, and `memory_type` falls back to the
+literal `memory`.
 
-**If results exist:** Display them as a numbered list:
+**This endpoint returns no timestamp, no source_file and no session_id.** The server does not
+emit them. Use the `mempalace_search` MCP tool when you need those fields.
+
+**If `additionalContext` is empty:** Tell the user "No memories found matching that query." and STOP.
+
+Note: the server drops every memory scoring below `min_similarity` (default `0.3`) before it
+builds this string. An empty result can therefore mean "nothing scored high enough" rather
+than "nothing is stored". Say which one you mean when you report an empty result.
+
+**If it is not empty:** Display the memories as a numbered list:
 
 ```
 ## Memory Search Results
@@ -131,11 +142,11 @@ Parse the JSON response. The response shape is:
 
 1. **[decision]** <topic> — <project>
    <content>
-   _similarity: 0.85 | <timestamp>_
+   _similarity: 0.85_
 
 2. **[discovery]** <topic> — <project>
    <content>
-   _similarity: 0.72 | <timestamp>_
+   _similarity: 0.72_
 
 ...
 ```
@@ -145,7 +156,7 @@ Each result MUST show:
 - **topic** as the heading
 - **project** name after the topic (so the user knows which project it came from)
 - **content** as the body
-- **similarity** score and **timestamp** as metadata
+- **similarity** score as metadata
 
 This ensures results from multiple projects are clearly labeled (AC4).
 

@@ -261,3 +261,58 @@ class TestRecallInvalidateTimelineUnchanged:
     def test_timeline_still_routes_to_mcp_tool(self):
         body = self._read_body()
         assert "mempalace_kg_timeline" in body, "timeline route must survive #64 (AC4)"
+
+
+class TestRecallSearchContractMatchesServer:
+    """The documented /search call must match rawgentic_memory/server.py.
+
+    The skill used to POST {"query": ...} and parse a "results" array; the
+    server reads the body field "prompt" and returns {"additionalContext": str},
+    so every /recall search silently returned nothing.
+    """
+
+    SERVER_FILE = PROJECT_ROOT / "rawgentic_memory" / "server.py"
+
+    def _read_body(self):
+        content = SKILL_FILE.read_text()
+        return content.split("---", 2)[2]
+
+    def test_search_body_uses_prompt_field(self):
+        body = self._read_body()
+        assert '"prompt"' in body, (
+            "Skill must POST the query in the body field 'prompt' — "
+            "server.py reads body.get('prompt')"
+        )
+        assert '"query": "THE_QUERY"' not in body, (
+            "Skill must not POST a 'query' body field; the server ignores it"
+        )
+
+    def test_search_response_parsed_as_additional_context(self):
+        body = self._read_body()
+        assert "additionalContext" in body, (
+            "Skill must parse the 'additionalContext' string the server returns"
+        )
+        assert '"results": [' not in body, (
+            "Skill must not document a 'results' array for /search; "
+            "the server returns a formatted additionalContext string"
+        )
+
+    def test_project_filter_uses_header(self):
+        body = self._read_body()
+        assert "x-project" in body.lower(), (
+            "Skill must send --project as the x-project header — "
+            "the server reads request.headers['x-project'], not a body field"
+        )
+
+    def test_server_still_reads_prompt_and_returns_additional_context(self):
+        """Guards the other direction: if the server changes, fix the skill."""
+        server = self.SERVER_FILE.read_text()
+        assert 'body.get("prompt"' in server, (
+            "server.py no longer reads body['prompt'] — update skills/recall/SKILL.md"
+        )
+        assert '"additionalContext"' in server, (
+            "server.py no longer returns additionalContext — update skills/recall/SKILL.md"
+        )
+        assert 'request.headers.get("x-project"' in server, (
+            "server.py no longer reads the x-project header — update skills/recall/SKILL.md"
+        )
